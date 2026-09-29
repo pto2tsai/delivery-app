@@ -186,6 +186,10 @@
       <button class="btn sec grow" onclick="go({ v: 'import', id: ST.trip.id })">📄 匯入 Excel</button>
       <button class="btn sec grow" onclick="openAdd({ voice: true })">🎤 新增地址</button>
     </div>
+    <div class="row" style="margin:-2px 0 12px">
+      <button class="btn sec grow" onclick="pickFromRoute()">📋 從常用客戶挑</button>
+      <button class="btn sec grow" onclick="openVoiceBatch()">🎤 念紙本訂單</button>
+    </div>
     <div class="card">
       <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b></div>
       <div id="listWarn"></div>
@@ -494,13 +498,29 @@ function renderTrips() {
 }
 function newTrip() {
   const d = ST.today || new Date().toISOString().slice(0, 10);
-  sheet('<h2>新增行程</h2><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
-    '<label class="f">名稱（例如：中壢線、台南線）</label><input id="ntName" class="in" placeholder="不填就用日期">' +
+  sheet('<h2>新增行程</h2><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
+    '<label class="f">名稱＝路線（例如：雲林、台南線）</label><input id="ntName" class="in" placeholder="取名字，下次才能從常用路線帶客戶">' +
     '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填">' +
     '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
     '<p><button class="btn" id="ntGo">建立</button></p>', (el, close) => {
+    // 常用路線：點一下帶入名稱，建立後直接勾今天有叫貨的客戶
+    let known = [];
+    call('routes', {}, false).then(rs => {
+      known = rs.map(r => r.name);
+      if (!rs.length || !$('ntRoutes')) return;
+      $('ntRoutes').innerHTML = '<b>常用路線</b><div class="mut">點一下，建立後勾今天有叫貨的客戶就好</div><div class="chips">' +
+        rs.slice(0, 12).map((r, i) => '<button class="chip" data-r="' + i + '">' + esc(r.name) + ' <span class="mut" style="font-size:13px">' + r.trips + ' 趟</span></button>').join('') + '</div>';
+      $('ntRoutes').querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+        $('ntName').value = rs[+b.dataset.r].name;
+        $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
+      });
+    });
     el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, depart: $('ntDepart').value }, '建立中…')
-      .then(r => { close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id }); });
+      .then(r => {
+        close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id });
+        // 名稱是以前用過的路線（點的或自己打的）：直接跳出常用客戶讓他勾
+        if (known.indexOf(r.trip.name) >= 0) setTimeout(() => pickFromRoute(r.trip.name), 50);
+      });
   });
 }
 /* ================= 設定 ================= */
@@ -918,6 +938,91 @@ function openAdd(opt) {
     if (!voice) setTimeout(() => inA.focus(), 150);
   });
 }
+/**
+ * 念出來的一句話拆成客戶和地址：「朴子海產嘉義縣朴子市大鄉里651號」→ 客戶「朴子海產」、地址「嘉義縣朴子市…」。
+ * 找第一個縣市或常送的鄉鎮當地址開頭；沒有地址的樣子就當客戶名稱（到「以前送過的」找地址）
+ */
+function parseSpoken(raw) {
+  const t = spokenAddr(half(raw)).replace(/[，,。、\s]/g, '');
+  const towns = Object.keys(TOWNS).map(c => TOWNS[c]).join('|');
+  const m = t.match(new RegExp('(' + COUNTY_RE.source + ')|((' + towns + ')(市|鎮|鄉|區))'));
+  if (m) return { client: t.slice(0, m.index), addr: fillCounty(t.slice(m.index)) };
+  if (/[路街道巷弄號村]/.test(t)) return { client: '', addr: fillCounty(t) };
+  return { client: t, addr: '' };
+}
+/** 念紙本訂單：一家念一句，自動查地址，念完自動聽下一家；最後一次加入行程 */
+function openVoiceBatch() {
+  const items = [];
+  let rec = null, listening = false;
+  sheet('<h2>🎤 念紙本訂單</h2><div class="mut">一次念一家：客戶名稱＋地址，例如「朴子海產，嘉義縣朴子市大鄉里651號」。只念客戶名稱，會從以前送過的找地址。</div>' +
+    '<p><button class="btn" id="vbMic" style="padding:16px;font-size:20px">🎤 開始念</button></p>' +
+    '<div class="row"><input id="vbIn" class="in grow" placeholder="或打字（鍵盤麥克風也可以）" autocomplete="off"><button class="btn small" id="vbAdd">加入</button></div>' +
+    '<div id="vbList" style="margin-top:8px"></div><p><button class="btn" id="vbGo" disabled>加入行程</button></p>', (el, close) => {
+    const mic = el.querySelector('#vbMic'), go = el.querySelector('#vbGo');
+    const alive = () => !!document.getElementById('vbList');
+    const render = () => {
+      if (!alive()) return;
+      $('vbList').innerHTML = items.map((it, i) => '<div class="prev row" style="align-items:flex-start"><div class="grow"><b>' + (i + 1) + '. ' + esc(it.client || '（沒有客戶名稱）') + '</b><br>' + esc(it.addr || '—') + '<br>' +
+        (it.busy ? '<span class="badge">查詢中…</span>' : !it.g || !it.g.ok ? '<span class="badge fail">找不到位置</span>' : it.g.geo === '約略' ? '<span class="badge warn">約略</span>' : '<span class="badge done">✓ 找到</span>') + '</div>' +
+        '<button class="more" data-e="' + i + '" title="改">✎</button><button class="more" data-d="' + i + '" title="刪">✕</button></div>').join('');
+      $('vbList').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { items.splice(+b.dataset.d, 1); render(); });
+      $('vbList').querySelectorAll('[data-e]').forEach(b => b.onclick = () => {
+        const it = items[+b.dataset.e];
+        const t = prompt('改成（客戶名稱＋地址）', (it.client || '') + ' ' + (it.addr || ''));
+        if (t == null || !t.trim()) return;
+        Object.assign(it, parseSpoken(t)); lookup(it);
+      });
+      const n = items.filter(it => !it.busy).length;
+      go.disabled = !n || items.some(it => it.busy);
+      go.textContent = '加入行程（' + n + ' 家）';
+    };
+    const lookup = async it => {
+      it.busy = true; it.g = null; render();
+      try {
+        if (!it.addr && it.client) {   // 只念客戶名稱：找以前送過的
+          const c = (await call('findClients', { q: it.client }, false))[0];
+          if (c) { it.addr = c.addr; it.client = c.client || it.client; it.phone = c.phone; it.open = c.open; it.close = c.close; it.g = { ok: true, lat: c.lat, lng: c.lng, geo: c.geo }; }
+        } else if (it.addr) it.g = (await call('geocode', { addrs: [it.addr] }, false))[0];
+      } catch (e) { it.g = null; }
+      it.busy = false; render();
+    };
+    const heard = text => { const it = parseSpoken(text); if (!it.client && !it.addr) return; items.push(it); lookup(it); };
+    const setMic = () => { mic.textContent = listening ? '🔴 聽著…（按這裡停）' : items.length ? '🎤 說下一家' : '🎤 開始念'; };
+    const hear = () => {
+      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!SR) { toast('這支手機不能直接聽：請點下面的框，按鍵盤上的 🎤 念，再按「加入」', 5000); $('vbIn').focus(); return; }
+      try { rec = new SR(); } catch (e) { return; }
+      rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 1;
+      rec.onresult = e => { if (alive()) heard(e.results[0][0].transcript); };
+      rec.onerror = () => { listening = false; };
+      rec.onend = () => {   // 念完一家：自動聽下一家（手機不讓的話，按「說下一家」）
+        rec = null;
+        if (!alive()) return;
+        if (listening) setTimeout(() => { if (listening && alive()) { try { hear(); } catch (e) { listening = false; setMic(); } } }, 300);
+        setMic();
+      };
+      try { rec.start(); listening = true; } catch (e) { listening = false; }
+      setMic();
+    };
+    mic.onclick = () => { if (listening) { listening = false; try { rec && rec.stop(); } catch (e) {} setMic(); } else hear(); };
+    el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; } };
+    $('vbIn').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#vbAdd').click(); };
+    go.onclick = () => {
+      listening = false; try { rec && rec.stop(); } catch (e) {}
+      const miss = items.filter(it => !it.g || !it.g.ok).length;
+      if (miss && !confirm(miss + ' 家找不到位置，還是要一起加嗎？（不會排進路線，之後可以在地圖上放位置）')) return;
+      const stops = items.map(it => ({ client: it.client, addr: it.addr || it.client, phone: it.phone || '', open: it.open || '', close: it.close || '',
+        lat: it.g && it.g.ok ? it.g.lat : '', lng: it.g && it.g.ok ? it.g.lng : '', geo: it.g && it.g.ok ? it.g.geo : '找不到' }));
+      call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
+        close(); refresh(r);
+        if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
+        toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+      });
+    };
+    render();
+    setTimeout(hear, 300);
+  });
+}
 /** 語音輸入：瀏覽器支援就直接聽；不支援就請他按鍵盤上的麥克風 */
 function listen(input, done) {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -1014,9 +1119,60 @@ function renderDrive() {
     batchBtn(cur) +
     '<div class="big2"><button class="btn" onclick="driveDone(\'' + cur.id + '\')">✓ 已送達</button><button class="btn red" onclick="askFail(ST.stops.find(s=>s.id===\'' + cur.id + '\'))">✗ 沒送成</button></div>' +
     (cur.phone ? '<p style="text-align:center"><button class="btn sec small" onclick="driveSkip(\'' + cur.id + '\')">⏭ 先跳過，送下一家</button></p>' : '');
-  $('driveCard').insertAdjacentHTML('beforeend', '<p style="margin:12px 0 0"><button class="btn sec" style="padding:16px;font-size:19px" onclick="openAdd({ voice: true })">🎤 說地址插單</button></p>');
+  $('driveCard').insertAdjacentHTML('beforeend', '<div class="big2"><button class="btn sec" onclick="fixPlace(\'' + cur.id + '\')">📍 位置不對？</button>' +
+    '<button class="btn sec" onclick="openAdd({ voice: true })">🎤 說地址插單</button></div>');
   const nx = todo.filter(s => s.id !== cur.id).slice(0, 3);
   $('driveNext').innerHTML = nx.length ? '<div class="card"><b>接下來</b>' + nx.map(s => '<div class="prev">' + s.seq + '. ' + esc(s.client ? s.client + '　' : '') + '<span class="mut">' + esc(s.addr) + '</span></div>').join('') + '</div>' : '';
+}
+/**
+ * 從常用路線挑客戶：以前這條路線（同名行程）送過的客戶，照送過的次數排，
+ * 司機勾今天有叫貨的；已經在清單裡的不能再勾
+ */
+function pickFromRoute(name) {
+  name = (name || ST.trip.name).replace(/[（(]續[)）]/g, '').trim();
+  call('routeClients', { name, trip: ST.trip.id }, '讀取常用客戶…').then(list => {
+    if (!list.length) { toast('「' + name + '」以前還沒送過。先用匯入、新增地址或念訂單加客戶，下次就會出現在這裡', 5000); return; }
+    const pick = {};
+    const md = d => d ? d.slice(5).replace('-', '/') : '';
+    sheet('<h2>📋 ' + esc(name) + '的常用客戶</h2><div class="mut">勾今天有叫貨的。照送過的次數排。</div>' +
+      '<div class="row" style="margin:10px 0"><input id="rcQ" class="in grow" placeholder="🔍 找客戶" autocomplete="off"><button class="btn small sec" id="rcAll">全選</button><button class="btn small sec" id="rcNone">全不選</button></div>' +
+      '<div id="rcList"></div><p><button class="btn" id="rcGo" disabled>加入</button></p>', (el, close) => {
+      const go = el.querySelector('#rcGo');
+      const render = () => {
+        const q = $('rcQ').value.trim();
+        $('rcList').innerHTML = list.map((c, i) => (q && (c.client + c.addr).indexOf(q) < 0) ? '' :
+          '<label class="prev row' + (c.inTrip ? ' off' : '') + '" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"' + (pick[i] ? ' checked' : '') + (c.inTrip ? ' disabled' : '') + '>' +
+          '<div class="grow"><b style="font-size:17px">' + esc(c.client || '（沒有名稱）') + '</b>' + (c.inTrip ? ' <span class="badge done">已在清單</span>' : '') +
+          '<div class="mut">' + esc(c.addr) + '</div><div class="mut">送過 ' + c.times + ' 次・上次 ' + md(c.last) + (twText(c) ? '　' + twTag(c) : '') +
+          (c.lat === '' ? '　<span class="badge fail">沒有位置</span>' : '') + '</div></div></label>').join('');
+        $('rcList').querySelectorAll('[data-i]').forEach(x => x.onchange = () => { if (x.checked) pick[x.dataset.i] = 1; else delete pick[x.dataset.i]; count(); });
+        count();
+      };
+      const count = () => { const n = Object.keys(pick).length; go.disabled = !n; go.textContent = n ? '加入 ' + n + ' 家' : '勾選要送的客戶'; };
+      $('rcQ').oninput = render;
+      el.querySelector('#rcAll').onclick = () => { list.forEach((c, i) => { if (!c.inTrip) pick[i] = 1; }); render(); };
+      el.querySelector('#rcNone').onclick = () => { Object.keys(pick).forEach(k => delete pick[k]); render(); };
+      go.onclick = () => {
+        const stops = Object.keys(pick).map(i => list[i]).map(c => ({ client: c.client, addr: c.addr, phone: c.phone, open: c.open, close: c.close, lat: c.lat, lng: c.lng, geo: c.geo }));
+        call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
+          close(); refresh(r);
+          if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
+          toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+        });
+      };
+      render();
+    });
+  });
+}
+/** 送貨時：司機覺得位置不對（不管精確或約略）→ 用現在的位置，或在地圖上拖 */
+function fixPlace(id) {
+  const s = ST.stops.find(x => x.id === id);
+  sheet('<h2>「' + esc(s.client || s.addr) + '」的位置不對？</h2><div class="mut">改好會記住，下次送這一家直接用。</div>' +
+    '<div style="display:grid;gap:10px;margin-top:14px"><button class="btn" data-a="here" style="padding:16px">📍 我到了，用我現在的位置</button>' +
+    '<button class="btn sec" data-a="map">🗺 在地圖上拖到正確位置</button></div>', (el, close) => {
+    el.querySelector('[data-a=here]').onclick = () => { close(); pinHereFor(id); };
+    el.querySelector('[data-a=map]').onclick = () => { close(); editPin(id); };
+  });
 }
 function driveDone(id) { setStatus(ST.stops.find(s => s.id === id), '已送達').then(() => toast('✓ 已送達')); }
 function driveSkip(id) { ST.drive.skip.push(id); renderDrive(); }
