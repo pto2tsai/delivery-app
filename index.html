@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>送貨助手</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-64.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="送貨助手">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="theme-color" content="#0b6b4f">
+<style>
+  html,body{margin:0;height:100%;background:#0b6b4f;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+  body{padding-top:env(safe-area-inset-top);box-sizing:border-box}
+  #app{display:block;width:100%;height:100%;border:0;background:#fff}
+  #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;transition:opacity .35s}
+  #splash img{width:min(46vw,200px);height:auto}
+  #splash b{font-size:28px;color:#17212b;letter-spacing:2px}
+  #splash.off{opacity:0;pointer-events:none}
+  #slow{display:none;font-size:15px;color:#5b6f7b;text-align:center;padding:0 24px}
+  #slow a{color:#1f5f93}
+</style>
+</head>
+<body>
+<div id="splash">
+  <img src="splash.png" alt="">
+  <b>送貨助手</b>
+  <div id="slow">讀取比較久……<br>一直沒出現的話，<a id="direct" href="#" target="_blank" rel="noopener">點這裡直接打開</a></div>
+</div>
+<!-- allow：讓裡面的系統可以用定位（從目前位置出發、記下這家的位置）、麥克風（語音加地址） -->
+<iframe id="app" title="送貨助手" allow="geolocation *; microphone *; clipboard-write *; screen-wake-lock *"></iframe>
+<script>
+/*
+ * 送貨助手 App 外殼：手機「加入主畫面」後的圖示、名稱都來自這裡，打開後把系統包在裡面（全螢幕，像 App）。
+ * 只有入口頁和圖示，沒有任何程式邏輯、資料或密碼。
+ * APP_URL：Apps Script 部署的網址（結尾 /exec，見 delivery-helper 的 docs/WEB_APP_URL.txt）。換部署時只改這一行。
+ */
+const APP_URL = 'https://script.google.com/macros/s/AKfycbwVuEXAz0r6B-GbexBxwmwoit50TFHlb8wFUd_i-b1Vl1NfZJytL2ajU5-ydryV2bsHzg/exec';
+
+const frame = document.getElementById('app'), splash = document.getElementById('splash');
+document.getElementById('direct').href = APP_URL;
+const done = () => splash.classList.add('off');
+// 系統頁面打招呼（載入完成）就收起開場畫面；萬一沒打招呼，外框載入 3 秒後也收起來
+window.addEventListener('message', e => {
+  let host = '';
+  try { host = new URL(e.origin).hostname; } catch (err) { return; }
+  if (/\.googleusercontent\.com$|\.google\.com$/.test(host) && e.data && e.data.dh === 'hello') done();
+});
+frame.addEventListener('load', () => setTimeout(done, 3000));
+frame.src = APP_URL;
+setTimeout(() => { document.getElementById('slow').style.display = 'block'; }, 12000);
+</script>
+</body>
+</html>
