@@ -13,9 +13,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b6b4f">
 <style>
-  html,body{margin:0;height:100%;background:#0b6b4f;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
-  body{padding-top:env(safe-area-inset-top);box-sizing:border-box}
-  #app{display:block;width:100%;height:100%;border:0;background:#fff}
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b6b4f;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+  /* 系統畫面從狀態列下面一路延伸到螢幕最底（iPhone 底部橫線那一段也蓋住，不露出綠色） */
+  #app{position:fixed;left:0;top:env(safe-area-inset-top);width:100%;border:0;background:#fff;
+    height:calc(100vh - env(safe-area-inset-top));height:calc(100dvh - env(safe-area-inset-top))}
   #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;transition:opacity .35s}
   #splash img{width:min(46vw,200px);height:auto}
   #splash b{font-size:28px;color:#17212b;letter-spacing:2px}
