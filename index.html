@@ -13,7 +13,8 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b6b4f">
 <style>
-  html,body{margin:0;height:100%;overflow:hidden;background:#0b6b4f;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
+  /* 底色：上面（狀態列）綠色、下面白色：萬一畫面沒撐到底，露出來的也是跟導航列一樣的白色 */
+  html,body{margin:0;height:100%;overflow:hidden;background:#fff linear-gradient(#0b6b4f, #0b6b4f) top / 100% 140px no-repeat;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
   /* 系統畫面從狀態列下面一路延伸到螢幕最底（iPhone 底部橫線那一段也蓋住，不露出綠色） */
   #app{position:fixed;left:0;top:env(safe-area-inset-top);width:100%;border:0;background:#fff;
     height:calc(100vh - env(safe-area-inset-top));height:calc(100dvh - env(safe-area-inset-top))}
@@ -56,20 +57,26 @@ frame.addEventListener('load', () => setTimeout(done, 3000));
 frame.src = APP_URL;
 
 /*
- * iPhone 從主畫面打開時的毛病：回報的畫面高度少算上面狀態列那一段，
- * 照它撐滿，最下面就會露出一條綠色。發現少算了，就改用螢幕實際的高度。
+ * iPhone 從主畫面打開時的毛病：回報的畫面高度少算上面狀態列那一段，照它撐滿，最下面就會露出一條。
+ * 而且剛打開時狀態列高度常常還量不到（0），所以：晚一點再量幾次；量不到就用「少算的那段」當狀態列高度。
  */
 function fit() {
-  const top = document.getElementById('probe').getBoundingClientRect().height;
+  let top = document.getElementById('probe').getBoundingClientRect().height;
   let h = window.innerHeight;
   const portrait = window.matchMedia('(orientation: portrait)').matches;
   const full = portrait ? screen.height : screen.width;
-  if (navigator.standalone && full > h && Math.abs(full - h - top) <= 4) h = full;
+  if (navigator.standalone && full > h && full - h < 80) {
+    if (!top) top = full - h;   // 少算的那段＝狀態列
+    h = full;
+  }
   frame.style.top = top + 'px';
   frame.style.height = (h - top) + 'px';
 }
 fit();
+[100, 500, 1500, 3000].forEach(t => setTimeout(fit, t));
+window.addEventListener('load', fit);
 window.addEventListener('resize', fit);
+if (window.visualViewport) visualViewport.addEventListener('resize', fit);
 window.addEventListener('orientationchange', () => setTimeout(fit, 300));
 setTimeout(() => { document.getElementById('slow').style.display = 'block'; }, 12000);
 </script>
