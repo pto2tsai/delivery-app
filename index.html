@@ -17,6 +17,7 @@
   /* 系統畫面從狀態列下面一路延伸到螢幕最底（iPhone 底部橫線那一段也蓋住，不露出綠色） */
   #app{position:fixed;left:0;top:env(safe-area-inset-top);width:100%;border:0;background:#fff;
     height:calc(100vh - env(safe-area-inset-top));height:calc(100dvh - env(safe-area-inset-top))}
+  #probe{position:fixed;top:0;height:env(safe-area-inset-top);width:0;visibility:hidden}
   #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;transition:opacity .35s}
   #splash img{width:min(46vw,200px);height:auto}
   #splash b{font-size:28px;color:#17212b;letter-spacing:2px}
@@ -32,6 +33,7 @@
   <div id="slow">讀取比較久……<br>一直沒出現的話，<a id="direct" href="#" target="_blank" rel="noopener">點這裡直接打開</a></div>
 </div>
 <!-- allow：讓裡面的系統可以用定位（從目前位置出發、記下這家的位置）、麥克風（語音加地址） -->
+<div id="probe"></div>
 <iframe id="app" title="送貨助手" allow="geolocation *; microphone *; clipboard-write *; screen-wake-lock *"></iframe>
 <script>
 /*
@@ -52,6 +54,23 @@ window.addEventListener('message', e => {
 });
 frame.addEventListener('load', () => setTimeout(done, 3000));
 frame.src = APP_URL;
+
+/*
+ * iPhone 從主畫面打開時的毛病：回報的畫面高度少算上面狀態列那一段，
+ * 照它撐滿，最下面就會露出一條綠色。發現少算了，就改用螢幕實際的高度。
+ */
+function fit() {
+  const top = document.getElementById('probe').getBoundingClientRect().height;
+  let h = window.innerHeight;
+  const portrait = window.matchMedia('(orientation: portrait)').matches;
+  const full = portrait ? screen.height : screen.width;
+  if (navigator.standalone && full > h && Math.abs(full - h - top) <= 4) h = full;
+  frame.style.top = top + 'px';
+  frame.style.height = (h - top) + 'px';
+}
+fit();
+window.addEventListener('resize', fit);
+window.addEventListener('orientationchange', () => setTimeout(fit, 300));
 setTimeout(() => { document.getElementById('slow').style.display = 'block'; }, 12000);
 </script>
 </body>
