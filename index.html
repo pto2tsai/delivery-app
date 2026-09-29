@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
+<base target="_top">
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>送貨助手</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-64.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
@@ -12,73 +12,1415 @@
 <meta name="apple-mobile-web-app-title" content="送貨助手">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="theme-color" content="#0b6b4f">
+<!-- 這個檔案是 tools/build-web.js 從 delivery-helper 的 src/App.html 產生的，不要直接改 -->
+<title>送貨助手</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <style>
-  /* 底色：上面（狀態列）綠色、下面白色：萬一畫面沒撐到底，露出來的也是跟導航列一樣的白色 */
-  html,body{margin:0;height:100%;overflow:hidden;background:#fff linear-gradient(#0b6b4f, #0b6b4f) top / 100% 140px no-repeat;font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif}
-  /* 系統畫面從狀態列下面一路延伸到螢幕最底（iPhone 底部橫線那一段也蓋住，不露出綠色） */
-  #app{position:fixed;left:0;top:env(safe-area-inset-top);width:100%;border:0;background:#fff;
-    height:calc(100vh - env(safe-area-inset-top));height:calc(100dvh - env(safe-area-inset-top))}
-  #probe{position:fixed;top:0;height:env(safe-area-inset-top);width:0;visibility:hidden}
-  #splash{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#fff;transition:opacity .35s}
-  #splash img{width:min(46vw,200px);height:auto}
-  #splash b{font-size:28px;color:#17212b;letter-spacing:2px}
-  #splash.off{opacity:0;pointer-events:none}
-  #slow{display:none;font-size:15px;color:#5b6f7b;text-align:center;padding:0 24px}
-  #slow a{color:#1f5f93}
+  :root{--g:#0b6b4f;--g2:#10a36f;--gl:#e3f4ec;--ink:#17212b;--mut:#66727d;--line:#e3e8ec;--bg:#f4f6f8;--red:#e0453a;--org:#f39c12;--blue:#1e6fd9}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"PingFang TC","Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;font-size:17px}
+  button{font:inherit;cursor:pointer;color:inherit}   /* iPhone 按鈕文字預設是藍色 */
+  input,select,textarea{font:inherit;font-size:17px}
+  .hide{display:none!important}
+  header{position:sticky;top:0;z-index:20;background:linear-gradient(#0a5e45,#0b6b4f);color:#fff;display:flex;align-items:center;gap:8px;padding:calc(10px + env(safe-area-inset-top)) 12px 10px;min-height:56px}   /* 從主畫面打開時：狀態列下面才開始放字 */
+  header h1{flex:1;margin:0;font-size:21px;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hbtn{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.35);color:#fff;border-radius:22px;padding:7px 13px;font-size:15px;min-width:44px}
+  main{max-width:720px;margin:0 auto;padding:12px 12px calc(150px + env(safe-area-inset-bottom))}
+  .card{background:#fff;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.07);padding:14px;margin-bottom:12px}
+  .btn{border:0;border-radius:14px;padding:13px 16px;font-size:18px;font-weight:700;background:var(--g2);color:#fff;width:100%}
+  .btn.sec{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+  .btn.red{background:var(--red)}
+  .btn.small{width:auto;padding:9px 14px;font-size:16px}
+  .btn:disabled{opacity:.45}
+  .row{display:flex;gap:10px;align-items:center}
+  .row>.grow{flex:1;min-width:0}
+  .mut{color:var(--mut);font-size:15px}
+  .tabs{display:flex;background:#e4ecea;border-radius:14px;padding:4px;margin-bottom:12px}
+  .tabs button{flex:1;border:0;background:none;padding:11px;border-radius:11px;font-size:17px;font-weight:600;color:#33403b}
+  .tabs button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+  .badge{display:inline-block;border-radius:12px;padding:2px 10px;font-size:14px;font-weight:700;background:#eef1f3;color:#5a6670;white-space:nowrap}
+  .badge.done{background:#dcf5e8;color:#0b7a4f}.badge.fail{background:#fde4e2;color:#c0392b}.badge.warn{background:#fff1d6;color:#a86500}
+  .trip{display:block;width:100%;text-align:left;border:0;background:#fff;border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
+  .trip b{font-size:19px}
+  .bar{height:8px;background:#eef1f3;border-radius:5px;overflow:hidden;margin-top:8px}
+  .bar i{display:block;height:100%;background:var(--g2)}
+  .se{display:flex;gap:10px;align-items:flex-start;padding:10px 2px;border:0;background:none;width:100%;text-align:left}
+  .se+.se{border-top:1px solid var(--line)}
+  .dot{width:13px;height:13px;border-radius:50%;margin-top:6px;flex:none}
+  .stop{display:flex;gap:10px;align-items:flex-start;padding:12px 2px;border-top:1px solid var(--line)}
+  .stop:first-child{border-top:0}
+  .num{flex:none;width:34px;height:34px;border-radius:50%;border:2.5px solid #c9d2d8;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#4c5a64;background:#fff}
+  .num.next{border-color:var(--ink);color:var(--ink)}
+  .num.done{background:var(--g2);border-color:var(--g2);color:#fff}
+  .num.fail{background:var(--red);border-color:var(--red);color:#fff}
+  .num.start{background:#2ecc71;border-color:#2ecc71;color:#fff}
+  .num.end{background:var(--red);border-color:var(--red);color:#fff}
+  .stop .client{font-weight:800;font-size:19.5px;line-height:1.3;color:var(--ink);word-break:break-all}
+  .stop .addr{font-weight:700;font-size:17px;line-height:1.35;word-break:break-all}
+  .stop .client+.addr{font-weight:500;font-size:15.5px;color:#34424c}
+  button.badge{border:0;cursor:pointer}
+  .tw{display:inline-block;border-radius:10px;padding:1px 8px;font-size:14px;font-weight:700;background:#e6f0ff;color:#1e5bb8;white-space:nowrap}
+  .tw.late{background:#fde4e2;color:#c0392b}
+  #pinBar{background:#fff;padding:12px 14px calc(12px + env(safe-area-inset-bottom));box-shadow:0 -2px 10px rgba(0,0,0,.12)}
+  .pin.fix{background:var(--red);width:36px!important;height:36px!important;margin:-36px 0 0 -18px!important;border-radius:50% 50% 50% 0;transform:rotate(-45deg)}
+  .stop .sub{color:var(--mut);font-size:14.5px;margin-top:2px}
+  .more{border:0;background:none;font-size:22px;color:#5a6670;padding:0 6px;line-height:1}
+  .fab{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));width:64px;height:64px;border-radius:50%;background:var(--g);color:#fff;border:0;font-size:36px;box-shadow:0 4px 12px rgba(0,0,0,.25);z-index:30}
+  .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:flex-end;justify-content:center}
+  .sheet{background:#fff;width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
+  .sheet h2{margin:0 0 12px;font-size:20px}
+  label.f{display:block;margin:12px 0 5px;font-weight:600;font-size:15px;color:#3b4852}
+  .in{width:100%;border:1.5px solid #cfd8de;border-radius:12px;padding:12px;background:#fff}
+  .in:focus{outline:none;border-color:var(--g2)}
+  .opt{display:flex;gap:12px;align-items:flex-start;padding:10px 0;font-size:17px}
+  .opt input{width:22px;height:22px;margin:2px 0 0;accent-color:var(--g)}
+  .sum-big{font-size:40px;font-weight:800;line-height:1}
+  .legend span{margin-left:10px;font-size:15px;white-space:nowrap}
+  .legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px}
+  #toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(23,33,43,.92);color:#fff;padding:12px 18px;border-radius:12px;z-index:90;max-width:88vw;font-size:16px;text-align:center}
+  #busy{position:fixed;inset:0;background:rgba(255,255,255,.6);z-index:80;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;font-weight:700}
+  .spin{width:44px;height:44px;border:5px solid #cfe9dd;border-top-color:var(--g2);border-radius:50%;animation:sp 1s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .drop{border:2.5px dashed #b9c6cf;border-radius:16px;padding:34px 16px;text-align:center;background:#f8fafb;display:block}
+  table.map{width:100%;border-collapse:collapse;font-size:15px}
+  table.map td{padding:6px 4px;border-bottom:1px solid var(--line)}
+  table.map select{width:100%;padding:8px;border-radius:10px;border:1.5px solid #cfd8de;background:#fff}
+  .prev{font-size:15px;padding:9px 0;border-top:1px solid var(--line)}
+  .prev b{font-size:16px}
+  #mapWrap{position:fixed;inset:0 0 calc(64px + env(safe-area-inset-bottom)) 0;z-index:40;background:#fff;display:flex;flex-direction:column}
+  #mapWrap.full{bottom:0}
+  /* 導航列貼到最底；iPhone 底部橫線那一段只留剛好的空間 */
+  #tabbar{position:fixed;left:0;right:0;bottom:0;z-index:45;background:#fff;border-top:1px solid #e1e6ea;display:flex;padding:2px 0 max(2px, calc(env(safe-area-inset-bottom) - 12px));box-shadow:0 -2px 8px rgba(0,0,0,.05)}
+  #tabbar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 7px;color:#6b7780;font-size:12.5px;font-weight:600}
+  #tabbar svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  #tabbar button.on{color:var(--g)}
+  #tabbar button.on svg{stroke-width:2.4}
+  .cl{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;background:none;padding:12px 2px;border-top:1px solid var(--line)}
+  .cl:first-child{border-top:0}
+  #map{flex:1}
+  .pin{background:var(--blue);color:#fff;border:2px solid #fff;border-radius:50%;width:30px!important;height:30px!important;margin:-15px 0 0 -15px!important;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
+  .pin.done{background:var(--g2)}.pin.fail{background:var(--red)}.pin.s{background:#2ecc71}.pin.e{background:#333}
+  .drive-num{font-size:15px;color:var(--mut)}
+  .drive-addr{font-size:24px;font-weight:800;line-height:1.35;margin:6px 0;word-break:break-all}
+  .drive-client{font-size:20px;font-weight:700}
+  .big2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .big2 .btn{padding:18px 8px;font-size:19px}
+  .reasons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .sug{display:block;width:100%;text-align:left;border:0;background:#f4f7f8;border-radius:12px;padding:10px 12px;margin-top:6px;font-size:16px}
+  .stop>.grow{flex:1;min-width:0}
+  .handle{flex:none;margin-left:auto;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;font-size:26px;line-height:1;color:#7a8791;
+    width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;align-self:center;background:#f3f6f7}
+  .drag-row{user-select:none;-webkit-user-select:none;background:#fff}
+  .drag-row.dragging{background:var(--gl);border-radius:12px;box-shadow:0 8px 20px rgba(0,0,0,.2);position:relative;z-index:5;transition:none}
+  .drag-row.dragging .handle{cursor:grabbing;color:var(--g)}
+  #reBar{position:sticky;top:calc(64px + env(safe-area-inset-top));z-index:15}
+  .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .chip{display:flex;align-items:center;gap:6px;border:1.5px solid var(--line);border-radius:20px;padding:7px 12px;font-size:16px;background:#fff}
+  .chip.on{border-color:var(--g2);background:var(--gl)}
+  .chip input,.prev input{width:20px;height:20px;accent-color:var(--g)}
+  .prev.off{opacity:.45}
+  .warnbox{background:#fff6e5;border:1px solid #f5d08a;border-radius:12px;padding:10px 12px;font-size:15px;margin:8px 0}
 </style>
 </head>
 <body>
-<div id="splash">
-  <img src="splash.png" alt="">
-  <b>送貨助手</b>
-  <div id="slow">讀取比較久……<br>一直沒出現的話，<a id="direct" href="#" target="_blank" rel="noopener">點這裡直接打開</a></div>
+
+<header id="hdr">
+  <button class="hbtn hide" id="hBack" onclick="goBack()">‹ 返回</button>
+  <h1 id="hTitle">送貨助手</h1>
+  <span id="hRight" style="min-width:60px"></span>
+</header>
+
+<!-- 密碼 -->
+<main id="vPin" class="hide">
+  <div class="card">
+    <h2 style="margin-top:0">請輸入密碼</h2>
+    <input id="pinIn" class="in" type="password" inputmode="numeric" autocomplete="off" onkeydown="if(event.key==='Enter')tryPin()">
+    <p><button class="btn" onclick="tryPin()">進入</button></p>
+    <div id="pinMsg" class="mut"></div>
+  </div>
+</main>
+
+<!-- 首頁：行程列表 -->
+<main id="vHome" class="hide">
+  <button class="btn" onclick="newTrip()">＋ 新增行程</button>
+  <div id="homeWarn"></div>
+  <div class="tabs" style="margin-top:14px"><button id="hmTodo" class="on" onclick="homeTab('todo')">待配送</button><button id="hmDone" onclick="homeTab('done')">已完成</button></div>
+  <div id="tripList"></div>
+</main>
+
+<!-- 客戶（以前送過的） -->
+<main id="vClients" class="hide">
+  <div class="row"><input id="clQ" class="in grow" placeholder="🔍 搜尋客戶名稱或地址" autocomplete="off"><button class="btn small" style="font-size:22px" onclick="listen($('clQ'))" title="語音">🎤</button></div>
+  <div class="mut" id="clInfo" style="margin:8px 4px"></div>
+  <div class="card" id="clList"></div>
+</main>
+
+<!-- 設定 -->
+<main id="vSettings" class="hide">
+  <div class="card">
+    <b style="font-size:18px">公司地址</b><div class="mut">新行程的預設出發點</div>
+    <input id="hmAddr" class="in" style="margin-top:8px" placeholder="例如：嘉義縣布袋鎮○○路○號">
+    <p style="margin-bottom:0"><button class="btn" id="hmGo" onclick="saveHome()">儲存</button></p>
+  </div>
+  <div class="card">
+    <b style="font-size:18px">像 App 一樣用</b>
+    <div class="mut" style="margin-top:6px;line-height:1.6">iPhone：Safari 下方「分享」→「加入主畫面」<br>Android：Chrome 右上角 ⋮ →「加到主畫面」<br>手機的返回鍵會回到上一個畫面。</div>
+  </div>
+  <div class="card">
+    <b style="font-size:18px">密碼</b>
+    <div class="mut" style="margin-top:6px;line-height:1.6">在 Apps Script「專案設定 → 指令碼屬性」新增 APP_PIN。每支手機第一次打開輸入一次。</div>
+    <p style="margin-bottom:0"><button class="btn sec" onclick="forgetPin()">這支手機重新輸入密碼</button></p>
+  </div>
+</main>
+
+<!-- 行程 -->
+<main id="vTrip" class="hide">
+  <div class="tabs"><button id="tbList" class="on" onclick="tab('list')">送貨清單</button><button id="tbRoute" onclick="tab('route')">路線規劃</button></div>
+
+  <div id="pList">
+    <div class="card" style="padding:4px 14px">
+      <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><b>起點</b>　<span id="startTxt"></span>　<span class="tw" id="departTxt"></span></span><span class="mut">›</span></button>
+      <button class="se" onclick="openEnds()"><span class="dot" style="background:var(--red)"></span><span class="grow"><b>終點</b>　<span id="endTxt"></span></span><span class="mut">›</span></button>
+    </div>
+    <div class="row" style="margin-bottom:12px">
+      <button class="btn sec grow" onclick="go({ v: 'import', id: ST.trip.id })">📄 匯入 Excel</button>
+      <button class="btn sec grow" onclick="openAdd({ voice: true })">🎤 新增地址</button>
+    </div>
+    <div class="card">
+      <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b></div>
+      <div id="listWarn"></div>
+      <div class="chips" id="stFilter" style="margin:10px 0 4px"></div>
+      <div id="stopList"></div>
+    </div>
+    <button class="btn sec" onclick="tripMenu()">⋯ 這個行程的其他動作</button>
+  </div>
+
+  <div id="pRoute" class="hide">
+    <div id="routeEmpty" class="card" style="text-align:center;padding:26px 14px">
+      <div style="font-size:30px;letter-spacing:4px;color:#9aa6ae">●┈○┈○┈○┈●</div>
+      <h2 style="margin:12px 0 6px">準備規劃配送路線</h2>
+      <div class="mut">送貨清單有 <b id="pendN" style="color:var(--g)">0</b> 個待送點</div>
+      <p><button class="btn" onclick="openPlan()">規劃路線</button></p>
+      <div class="mut">💡 規劃完成後可以看地圖、每一站的距離和時間</div>
+    </div>
+    <div id="routeDone" class="hide">
+      <div class="card">
+        <div class="row"><span class="badge done">✓ 路線已規劃</span><span class="grow mut" id="planInfo" style="font-size:13.5px"></span><button class="btn sec small" onclick="openPlan()">重新規劃</button></div>
+        <div class="row" style="margin-top:12px;align-items:flex-end">
+          <div><span class="sum-big" id="sumN">0</span> 點</div>
+          <div class="grow legend" style="text-align:right"><span><i style="background:var(--g2)"></i><b id="sumDone">0</b> 完成</span><span><i style="background:var(--red)"></i><b id="sumFail">0</b> 沒送成</span><span><i style="background:#c9d2d8"></i><b id="sumTodo">0</b> 待送</span></div>
+        </div>
+        <div class="bar"><i id="sumBar" style="width:0"></i></div>
+        <div class="mut" style="margin-top:8px" id="sumLine"></div>
+        <div id="estWarn"></div>
+        <div class="row" style="margin-top:12px">
+          <button class="btn grow" onclick="go({ v: 'drive', id: ST.trip.id })">▶ 開始送貨</button>
+          <button class="btn sec" style="width:auto" onclick="go({ v: 'map', id: ST.trip.id })">🗺 地圖</button>
+        </div>
+        <div id="navBatchBox"></div>
+      </div>
+      <div class="row" style="margin:4px 4px 8px"><b class="grow">路線詳情</b><button class="btn sec small" id="reBtn" onclick="toggleReorder()">調整順序</button></div>
+      <div id="reBar" class="hide warnbox">按住右邊的 <b>☰</b> 拖到想要的位置，好了按「照這個順序重算」。<p style="margin:8px 0 0"><button class="btn" onclick="saveReorder()">照這個順序重算</button></p></div>
+      <div class="card" id="routeList"></div>
+    </div>
+  </div>
+</main>
+
+<!-- 匯入 Excel -->
+<main id="vImport" class="hide">
+  <div id="imp1">
+    <label class="drop"><input id="fileIn" type="file" accept=".xlsx,.xls,.csv,.txt" class="hide" onchange="readFile(this.files[0])">
+      <div style="font-size:44px">📄</div><b style="font-size:19px">點這裡選擇 ERP 匯出的檔案</b>
+      <div class="mut" style="margin-top:6px">支援 Excel（xlsx、xls）、CSV</div></label>
+    <p class="mut">同一個地址有好幾張訂單、好幾個品項時，會自動合成一站。</p>
+  </div>
+  <div id="imp2" class="hide">
+    <div class="card">
+      <div class="row"><b class="grow" id="impFile"></b><select id="impSheet" class="hide" onchange="pickSheet(this.value)"></select></div>
+      <div class="mut" style="margin:6px 0 4px">請確認每個欄位對到檔案的哪一欄（已自動猜好，猜錯可以改）</div>
+      <table class="map" id="mapTbl"></table>
+    </div>
+    <div class="card"><b>這趟要送哪些縣市？</b><div class="mut">不是這台車送的（寄黑貓、外縣市）取消勾選。下次會記住你的選擇。</div><div id="impCounties" class="chips"></div></div>
+    <div class="card"><b><span id="impCnt"></span></b><div id="impPrev"></div></div>
+    <button class="btn" id="impGo" onclick="doGeocode()">查地址、加入行程</button>
+  </div>
+  <div id="imp3" class="hide">
+    <div class="card"><b id="geoMsg">正在查地址…</b><div class="bar"><i id="geoBar" style="width:0"></i></div></div>
+    <div id="geoProb"></div>
+    <div id="geoOkBox" class="hide"><button class="btn" id="impAdd" onclick="finishImport()">加入行程</button></div>
+  </div>
+</main>
+
+<!-- 開始送貨 -->
+<main id="vDrive" class="hide">
+  <div class="card" id="driveCard"></div>
+  <div id="driveNext"></div>
+</main>
+
+<div id="mapWrap" class="hide">
+  <header><button class="hbtn" onclick="goBack()">‹ 返回</button><h1 id="mapTitle">路線預覽</h1><span style="min-width:60px"></span></header>
+  <div id="map"></div>
+  <div id="pinBar" class="hide">
+    <div id="pinWho" style="font-weight:700"></div>
+    <div class="mut" style="margin:2px 0 10px">拖動紅色的點（或直接點地圖）到正確的位置。右上角可以切換「空照圖」看房子。</div>
+    <div class="row"><button class="btn sec grow" onclick="pinHere()">📍 用我現在的位置</button><button class="btn grow" id="pinSave" onclick="pinSave()">儲存位置</button></div>
+  </div>
 </div>
-<!-- allow：讓裡面的系統可以用定位（從目前位置出發、記下這家的位置）、麥克風（語音加地址） -->
-<div id="probe"></div>
-<iframe id="app" title="送貨助手" allow="geolocation *; microphone *; clipboard-write *; screen-wake-lock *"></iframe>
+
+<nav id="tabbar" class="hide">
+  <button data-t="home" onclick="tabGo('home')"><svg viewBox="0 0 24 24"><path d="M1 4h13v11H1zM14 8h4l4 4v3h-8z"/><circle cx="5.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg>行程</button>
+  <button data-t="clients" onclick="tabGo('clients')"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>客戶</button>
+  <button data-t="map" onclick="tabGo('map')"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>地圖</button>
+  <button data-t="drive" onclick="tabGo('drive')"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8z"/></svg>送貨</button>
+  <button data-t="settings" onclick="tabGo('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
+</nav>
+
+<div id="sheetHost"></div>
+<button class="fab hide" id="fab" onclick="openAdd()">＋</button>
+<div id="busy" class="hide"><div class="spin"></div><div id="busyMsg">處理中…</div></div>
+<div id="toast" class="hide"></div>
+
 <script>
-/*
- * 送貨助手 App 外殼：手機「加入主畫面」後的圖示、名稱都來自這裡，打開後把系統包在裡面（全螢幕，像 App）。
- * 只有入口頁和圖示，沒有任何程式邏輯、資料或密碼。
- * APP_URL：Apps Script 部署的網址（結尾 /exec，見 delivery-helper 的 docs/WEB_APP_URL.txt）。換部署時只改這一行。
- */
-const APP_URL = 'https://script.google.com/macros/s/AKfycbwVuEXAz0r6B-GbexBxwmwoit50TFHlb8wFUd_i-b1Vl1NfZJytL2ajU5-ydryV2bsHzg/exec';
-
-const frame = document.getElementById('app'), splash = document.getElementById('splash');
-document.getElementById('direct').href = APP_URL;
-const done = () => splash.classList.add('off');
-// 系統頁面打招呼（載入完成）就收起開場畫面；萬一沒打招呼，外框載入 3 秒後也收起來
-window.addEventListener('message', e => {
-  let host = '';
-  try { host = new URL(e.origin).hostname; } catch (err) { return; }
-  if (/\.googleusercontent\.com$|\.google\.com$/.test(host) && e.data && e.data.dh === 'hello') done();
-});
-frame.addEventListener('load', () => setTimeout(done, 3000));
-frame.src = APP_URL;
+/* ================= 狀態、共用 ================= */
+const ST = { pin: '', home: null, today: '', trip: null, stops: [], view: 'home', tab: 'list', reorder: null, drive: null };
+const $ = id => document.getElementById(id);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+try { ST.pin = localStorage.getItem('dh_pin') || ''; } catch (e) {}
 
 /*
- * iPhone 從主畫面打開時的毛病：回報的畫面高度少算上面狀態列那一段，照它撐滿，最下面就會露出一條。
- * 而且剛打開時狀態列高度常常還量不到（0），所以：晚一點再量幾次；量不到就用「少算的那段」當狀態列高度。
+ * 跟 Apps Script 要資料：
+ * - 網頁直接放在 GitHub Pages（pto2tsai.github.io/delivery-app，司機手機用的）：用 fetch 呼叫 API_URL（Apps Script 的 doPost）
+ * - 從 Apps Script 網址打開（舊的方式，還能用）：用 google.script.run
+ * API_URL 由 tools/build-web.js 填入（docs/WEB_APP_URL.txt）
  */
-function fit() {
-  let top = document.getElementById('probe').getBoundingClientRect().height;
-  let h = window.innerHeight;
-  const portrait = window.matchMedia('(orientation: portrait)').matches;
-  const full = portrait ? screen.height : screen.width;
-  if (navigator.standalone && full > h && full - h < 80) {
-    if (!top) top = full - h;   // 少算的那段＝狀態列
-    h = full;
+const API_URL = 'https://script.google.com/macros/s/AKfycbwVuEXAz0r6B-GbexBxwmwoit50TFHlb8wFUd_i-b1Vl1NfZJytL2ajU5-ydryV2bsHzg/exec';
+function rpc(fn, args, pin) {
+  if (window.google && google.script && google.script.run) {
+    return new Promise((ok, fail) => google.script.run.withSuccessHandler(ok).withFailureHandler(fail).api({ fn, args, pin }));
   }
-  frame.style.top = top + 'px';
-  frame.style.height = (h - top) + 'px';
+  // Content-Type 用 text/plain：瀏覽器不會先問一次「可不可以跨網站」，Apps Script 才收得到
+  return fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ fn, args, pin }) })
+    .catch(() => { throw new Error('連不上系統，請確認網路後再試一次'); })
+    .then(r => r.json())
+    .then(o => { if (!o.ok) throw new Error(o.err); return o.v; });
 }
-fit();
-[100, 500, 1500, 3000].forEach(t => setTimeout(fit, t));
-window.addEventListener('load', fit);
-window.addEventListener('resize', fit);
-if (window.visualViewport) visualViewport.addEventListener('resize', fit);
-window.addEventListener('orientationchange', () => setTimeout(fit, 300));
-setTimeout(() => { document.getElementById('slow').style.display = 'block'; }, 12000);
+function call(fn, args, msg) {
+  if (msg !== false) busy(msg || '處理中…');
+  return rpc(fn, args, ST.pin).then(r => { busy(false); return r; }, e => {
+    busy(false);
+    const m = (e && e.message) || String(e);
+    if (/PIN_WRONG/.test(m)) showPin('密碼不對或已經換了，請重新輸入');
+    else alert('出了點問題：' + m.replace(/^Error:\s*/, ''));
+    throw e;
+  });
+}
+function busy(m) { if (m === false) $('busy').classList.add('hide'); else { $('busyMsg').textContent = m; $('busy').classList.remove('hide'); } }
+let toastT;
+function toast(m, ms) { const t = $('toast'); t.textContent = m; t.classList.remove('hide'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hide'), ms || 2600); }
+const ROOTS = ['home', 'clients', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
+function show(view) {
+  ST.view = view;
+  ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
+  $('hBack').classList.remove('hide');
+  $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
+  $('fab').classList.toggle('hide', !(view === 'trip' && ST.tab === 'list'));
+  $('tabbar').classList.toggle('hide', view === 'pin' || view === 'pinedit');
+  markTab(view);
+  if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
+}
+function markTab(view) {
+  const t = { home: 'home', trip: 'home', import: 'home', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
+  $('tabbar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+}
+
+/* ================= 換頁、返回鍵 =================
+ * 每換一頁就記一筆「上一頁」：手機返回鍵、左上角「返回」都回到上一個畫面，不會跳出去。
+ * Apps Script 網頁在 Google 的框架裡，要用 google.script.history 記（測試環境用瀏覽器的 history）
+ */
+const HIST = (window.google && google.script && google.script.history) || null;
+function navPush(state) { try { if (HIST) HIST.push(state, {}, state.v); else history.pushState(state, ''); } catch (e) {} }
+function navReplace(state) { try { if (HIST) HIST.replace(state, {}, state.v); else history.replaceState(state, ''); } catch (e) {} }
+let CUR = { v: 'home' };   // 目前這一頁
+function onNav(state) {
+  if (NAV_IGNORE > 0) { NAV_IGNORE--; return; }   // 關小視窗時自己收回的那一筆
+  const hadSheet = SHEET_ENTRY || document.querySelector('.sheet-bg');
+  closeSheets();
+  SHEET_ENTRY = false;
+  state = state && state.v ? state : { v: 'home' };
+  if (state.sheet) state = Object.assign({}, state, { sheet: undefined });
+  if (hadSheet && state.v === CUR.v && state.id === CUR.id) return;   // 返回鍵只是關掉小視窗
+  route(state);
+}
+if (HIST) HIST.setChangeHandler(e => onNav(e.state)); else window.addEventListener('popstate', e => onNav(e.state));
+/** 換到某一頁（記下上一頁） */
+function go(state) {
+  closeSheets();
+  if (sheetCloseT) { clearTimeout(sheetCloseT); sheetCloseT = null; }
+  if (SHEET_ENTRY) { SHEET_ENTRY = false; navReplace(state); } else navPush(state);   // 小視窗那一筆直接換成新頁面
+  route(state);
+}
+function goBack() { closeSheets(); try { history.back(); } catch (e) { route({ v: 'home' }); } }
+/** 需要行程資料的頁面：沒載入就先讀 */
+function withTrip(id, fn) {
+  if (ST.trip && ST.trip.id === id) { fn(); return; }
+  call('getTrip', { id }, '讀取行程…').then(r => { ST.tab = 'list'; setTrip(r); fn(); });
+}
+function route(st) {
+  CUR = { v: st.v, id: st.id };
+  if (st.v !== 'map' && st.v !== 'pinedit') closeMap();
+  if (st.v === 'home') loadHome();
+  else if (st.v === 'clients') loadClients();
+  else if (st.v === 'settings') showSettings();
+  else if (st.v === 'trip') openTrip(st.id, true);
+  else if (st.v === 'import') withTrip(st.id, showImport);
+  else if (st.v === 'drive') withTrip(st.id, showDrive);
+  else if (st.v === 'map') withTrip(st.id, showMap);
+  else if (st.v === 'pinedit') { if (!PINREQ) { goBack(); return; } showPinEditor(PINREQ); }
+  else loadHome();
+}
+/** 導航列：地圖、送貨用「目前這趟」（最後打開的行程；沒有就找最近一趟還沒送完的） */
+function tabGo(t) {
+  if (t === 'home' || t === 'clients' || t === 'settings') { go({ v: t }); return; }
+  const open = trip => {
+    if (t === 'drive' && !trip.planned) { ST.tab = 'route'; go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「開始送貨」', 3000); return; }
+    go({ v: t, id: trip.id });
+  };
+  if (ST.trip) { open(ST.trip); return; }
+  call('listTrips', {}, '找目前的行程…').then(list => {
+    const t0 = list.find(x => x.total > x.done + x.fail) || list[0];
+    if (!t0) { toast('還沒有行程，先到「行程」新增一趟'); return; }
+    call('getTrip', { id: t0.id }, '讀取行程…').then(r => { setTrip(r); ST.tab = 'list'; open(r.trip); });
+  });
+}
+function closeSheets() { document.querySelectorAll('.sheet-bg').forEach(b => b.remove()); }
+/**
+ * 小視窗（從下面滑上來的）：打開時也記一筆「上一頁」，手機返回鍵先關小視窗，不會退出這一頁。
+ * 關掉時把那一筆收回來；關掉後馬上換頁（go）就直接用新頁面蓋掉那一筆
+ */
+let SHEET_ENTRY = false, sheetCloseT = null, NAV_IGNORE = 0;
+function sheet(html, onReady) {
+  const bg = document.createElement('div');
+  bg.className = 'sheet-bg';
+  bg.innerHTML = '<div class="sheet">' + html + '</div>';
+  $('sheetHost').appendChild(bg);
+  if (sheetCloseT) { clearTimeout(sheetCloseT); sheetCloseT = null; }   // 關一個、開下一個：沿用同一筆
+  else if (!SHEET_ENTRY) { navPush(Object.assign({}, CUR, { sheet: 1 })); SHEET_ENTRY = true; }
+  const close = () => {
+    bg.remove();
+    if (document.querySelector('.sheet-bg') || sheetCloseT) return;
+    sheetCloseT = setTimeout(() => {
+      sheetCloseT = null;
+      if (SHEET_ENTRY && !document.querySelector('.sheet-bg')) { SHEET_ENTRY = false; NAV_IGNORE++; history.back(); }
+    }, 0);
+  };
+  bg.addEventListener('click', e => { if (e.target === bg) close(); });
+  if (onReady) onReady(bg.querySelector('.sheet'), close);
+  return close;
+}
+/** 指定時段的標籤：10:00 後、11:00 前、09:00–17:00 */
+const twText = s => s.open && s.close ? s.open + '–' + s.close : s.open ? s.open + ' 後' : s.close ? s.close + ' 前' : '';
+const isLate = s => !!(s.close && s.eta && s.status === '待送' && s.eta > s.close);
+function twTag(s, withEta) {
+  const w = twText(s), late = isLate(s);
+  let h = w ? '<span class="tw' + (late ? ' late' : '') + '">🕙 ' + w + '</span>' : '';
+  if (withEta && s.eta && s.status === '待送') h += ' <span class="mut">預計 ' + s.eta + ' 到</span>' + (late ? ' <b style="color:var(--red)">會晚到</b>' : '');
+  return h;
+}
+const fmtMin = m => m >= 60 ? Math.floor(m / 60) + ' 小時 ' + (m % 60) + ' 分' : m + ' 分';
+const badgeOf = s => s.status === '已送達' ? '<span class="badge done">已送達</span>' : s.status === '沒送成' ? '<span class="badge fail">沒送成</span>' : '<span class="badge">待送</span>';
+/** 電話欄可能有好幾支：撥第一支 */
+const telOf = p => esc(String(p).split(/[\/、,，]/)[0].replace(/[^\d+#]/g, ''));
+const mapsUrl = s => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + s.lat + ',' + s.lng;
+/** Google 地圖一次最多 10 個點（9 個中途點＋目的地），從目前位置出發 */
+const NAV_MAX = 10;
+function batchUrl(list) {
+  const pts = list.filter(s => s.lat !== '').slice(0, NAV_MAX), d = pts[pts.length - 1];
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + d.lat + ',' + d.lng +
+    (pts.length > 1 ? '&waypoints=' + pts.slice(0, -1).map(s => s.lat + ',' + s.lng).join('%7C') : '');
+}
+/** 接下來要送的（照順序、有位置的）；first 排第一個 */
+function nextBatch(first) {
+  const todo = ST.stops.filter(s => s.status === '待送' && s.lat !== '');
+  const i = first ? todo.indexOf(first) : 0;
+  return i > 0 ? todo.slice(i).concat(todo.slice(0, i)) : todo;
+}
+function batchBtn(first) {
+  const b = nextBatch(first), n = Math.min(b.length, NAV_MAX);
+  if (n < 2) return '';
+  return '<a class="btn sec" id="navBatch" style="display:block;text-align:center;text-decoration:none;margin-top:10px" target="_blank" href="' + batchUrl(b) + '">🗺 接下來 ' + n + ' 站一起導航</a>' +
+    '<div class="mut" style="text-align:center;margin-top:4px">Google 地圖一次最多 10 站，送完這批再按一次帶下一批</div>';
+}
+
+/* ================= 開場、密碼 ================= */
+function boot() {
+  rpc('hello', { pin: ST.pin }, ST.pin).then(r => {
+    if (!r.pinOk) { showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
+    ST.home = r.home; ST.today = r.today;
+    navReplace({ v: 'home' });
+    loadHome();
+  }, e => alert('連不上系統：' + e.message));
+}
+function showPin(msg) { closeMap(); show('pin'); $('hTitle').textContent = '送貨助手'; $('pinMsg').textContent = msg || ''; setTimeout(() => $('pinIn').focus(), 100); }
+function tryPin() {
+  ST.pin = $('pinIn').value.trim();
+  try { localStorage.setItem('dh_pin', ST.pin); } catch (e) {}
+  boot();
+}
+
+/* ================= 首頁 ================= */
+function loadHome() {
+  $('hTitle').textContent = '送貨助手';
+  show('home');
+  $('homeWarn').innerHTML = ST.home ? '' : '<div class="warnbox">還沒設定公司地址（出發點）。請按下方「設定」。</div>';
+  call('listTrips', {}, '讀取行程…').then(list => { ST.trips = list; renderTrips(); });
+}
+/** 待配送：還有沒送的；已完成：每一家都按過已送達或沒送成 */
+function homeTab(t) { ST.homeTab = t; renderTrips(); }
+function renderTrips() {
+  const t0 = ST.homeTab || 'todo', all = ST.trips || [];
+  const isDone = t => t.total > 0 && t.done + t.fail === t.total;
+  const list = all.filter(t => (t0 === 'done') === isDone(t));
+  $('hmTodo').classList.toggle('on', t0 === 'todo'); $('hmDone').classList.toggle('on', t0 === 'done');
+  $('hmTodo').textContent = '待配送 ' + all.filter(t => !isDone(t)).length;
+  $('hmDone').textContent = '已完成 ' + all.filter(isDone).length;
+  {
+    $('tripList').innerHTML = list.length ? list.map(t => {
+      const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0;
+      return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">' + esc(t.name) + '</b><span class="mut">' + esc(t.date) + '</span></div>' +
+        '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
+        (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
+    }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
+  }
+}
+function newTrip() {
+  const d = ST.today || new Date().toISOString().slice(0, 10);
+  sheet('<h2>新增行程</h2><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
+    '<label class="f">名稱（例如：中壢線、台南線）</label><input id="ntName" class="in" placeholder="不填就用日期">' +
+    '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填">' +
+    '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
+    '<p><button class="btn" id="ntGo">建立</button></p>', (el, close) => {
+    el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, depart: $('ntDepart').value }, '建立中…')
+      .then(r => { close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id }); });
+  });
+}
+/* ================= 設定 ================= */
+function showSettings() {
+  $('hTitle').textContent = '設定';
+  show('settings');
+  $('hmAddr').value = ST.home ? ST.home.addr : '';
+}
+function saveHome() {
+  call('saveHome', { addr: $('hmAddr').value }, '查地址…').then(h => { ST.home = h; toast('已儲存：' + h.addr); });
+}
+function forgetPin() {
+  try { localStorage.removeItem('dh_pin'); } catch (e) {}
+  ST.pin = '';
+  boot();
+}
+
+/* ================= 客戶（以前送過的，像「收藏」） ================= */
+let CLIENTS = [];
+function loadClients() {
+  $('hTitle').textContent = '客戶';
+  show('clients');
+  const q = $('clQ');
+  let timer;
+  q.oninput = () => { clearTimeout(timer); timer = setTimeout(fetchClients, 300); };
+  fetchClients();
+}
+function fetchClients() {
+  const q = $('clQ').value.trim();
+  call('findClients', { q, all: true }, q ? false : '讀取客戶…').then(list => {
+    if ($('clQ').value.trim() !== q) return;
+    CLIENTS = list;
+    const rough = list.filter(c => c.geo === '約略' || c.geo === '找不到').length;
+    $('clInfo').textContent = (q ? '找到 ' : '共 ') + list.length + ' 家' + (rough ? '，其中 ' + rough + ' 家位置要確認' : '');
+    $('clList').innerHTML = list.length ? list.map((c, i) => '<button class="cl" onclick="clientMenu(' + i + ')"><div class="grow"><div class="client" style="font-weight:800;font-size:18.5px">' + esc(c.client || '（沒有名稱）') + '</div>' +
+      '<div class="mut">' + esc(c.addr) + (c.geo === '約略' ? ' <span class="badge warn">約略</span>' : c.geo === '找不到' ? ' <span class="badge fail">找不到位置</span>' : c.geo === '手動' ? ' <span class="badge done">已校正</span>' : '') + '</div>' +
+      (c.phone || twText(c) ? '<div class="mut">' + [c.phone && '☎ ' + esc(c.phone), twText(c) && twTag(c)].filter(Boolean).join('　') + '</div>' : '') + '</div><span class="mut" style="font-size:22px">›</span></button>').join('')
+      : '<div class="mut" style="text-align:center;padding:24px 0">' + (q ? '找不到「' + esc(q) + '」' : '還沒有客戶。匯入過 Excel、送過貨的客戶會自動出現在這裡。') + '</div>';
+  });
+}
+function clientMenu(i) {
+  const c = CLIENTS[i];
+  sheet('<h2>' + esc(c.client || c.addr) + '</h2><div class="mut">' + esc(c.addr) + '</div>' + (c.note ? '<div class="mut">📝 ' + esc(c.note) + '</div>' : '') +
+    '<div style="display:grid;gap:10px;margin-top:14px">' +
+    (c.lat !== '' ? '<a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + mapsUrl(c) + '">🧭 導航到這裡</a>' : '') +
+    (c.phone ? '<a class="btn sec" style="text-align:center;text-decoration:none" href="tel:' + telOf(c.phone) + '">📞 打電話 ' + esc(c.phone) + '</a>' : '') +
+    '<button class="btn sec" data-a="pin">📍 在地圖上' + (c.lat === '' ? '放位置' : '修正位置') + '</button>' +
+    (ST.trip ? '<button class="btn sec" data-a="add">＋ 加到「' + esc(ST.trip.name) + '」</button>' : '') + '</div>', (el, close) => {
+    el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      close();
+      if (b.dataset.a === 'pin') editPinAddr(c);
+      else if (b.dataset.a === 'add') {
+        if (c.lat === '') { toast('這家還沒有位置，先在地圖上放位置'); return; }
+        call('addStops', { trip: ST.trip.id, stops: [{ addr: c.addr, client: c.client, phone: c.phone, lat: c.lat, lng: c.lng, geo: c.geo, open: c.open, close: c.close }] }, '加入中…').then(r => {
+          setTrip(r);
+          if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, false).then(setTrip);
+          toast('已加到「' + r.trip.name + '」' + (r.trip.planned ? '（插在最順路的位置）' : ''));
+        });
+      }
+    });
+  });
+}
+
+/* ================= 行程 ================= */
+function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; }
+function openTrip(id, fresh) {
+  const done = () => { $('hTitle').textContent = ST.trip.name; show('trip'); tab(ST.tab); };
+  if (fresh && ST.trip && ST.trip.id === id) { done(); return; }
+  call('getTrip', { id }, '讀取行程…').then(r => { if (!ST.trip || ST.trip.id !== id) ST.tab = 'list'; setTrip(r); done(); });
+}
+function tab(t) {
+  ST.tab = t;
+  $('tbList').classList.toggle('on', t === 'list');
+  $('tbRoute').classList.toggle('on', t === 'route');
+  $('pList').classList.toggle('hide', t !== 'list');
+  $('pRoute').classList.toggle('hide', t !== 'route');
+  $('fab').classList.toggle('hide', !(ST.view === 'trip' && t === 'list'));
+  render();
+}
+function refresh(r) { setTrip(r); render(); }
+function endLabel(t) { return t.endMode === '最後一家' ? '送完最後一家就結束' : t.endMode === '指定地址' ? (t.end || '（未設定）') : '回到起點'; }
+
+function render() {
+  const t = ST.trip, ss = ST.stops;
+  if (!t) return;
+  $('hTitle').textContent = t.name;
+  $('startTxt').textContent = t.start || '（未設定，會用目前位置）';
+  $('departTxt').textContent = t.depart + ' 出發';
+  $('endTxt').textContent = endLabel(t);
+  $('cntBadge').textContent = ss.length;
+  const noLoc = ss.filter(s => s.lat === '');
+  const rough = ss.filter(s => s.geo === '約略');
+  $('listWarn').innerHTML = (noLoc.length ? '<div class="warnbox">⚠ ' + noLoc.length + ' 家找不到位置，不會排進路線。按紅色的「找不到位置」把它放到地圖上，或按 ••• 改地址。</div>' : '') +
+    (rough.length ? '<div class="warnbox">位置「約略」的有 ' + rough.length + ' 家（Google 只找到村、路或區域，不知道是哪一棟）。按黃色的「約略」在地圖上拖到正確位置，下次就會記住。</div>' : '');
+  // 篩選：全部／待送／已送達／沒送成
+  const F = [['all', '全部', ss.length], ['待送', '待送', ss.filter(s => s.status === '待送').length], ['已送達', '已送達', ss.filter(s => s.status === '已送達').length], ['沒送成', '沒送成', ss.filter(s => s.status === '沒送成').length]];
+  if (!ST.filter || !F.some(f => f[0] === ST.filter)) ST.filter = 'all';
+  $('stFilter').innerHTML = ss.length ? F.map(f => '<button class="chip' + (ST.filter === f[0] ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' ' + f[2] + '</button>').join('') : '';
+  $('stFilter').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { ST.filter = b.dataset.f; render(); });
+  const shown = ST.filter === 'all' ? ss : ss.filter(s => s.status === ST.filter);
+  $('stopList').innerHTML = ss.length ? (shown.length ? shown.map(s => stopRow(s, false)).join('') : '<div class="mut" style="text-align:center;padding:20px 0">沒有「' + ST.filter + '」的</div>') :
+    '<div style="text-align:center;padding:30px 0" class="mut"><div style="font-size:40px">📍</div>還沒有送貨點<br>按上面「匯入 Excel」或右下角 ＋ 新增</div>';
+
+  const todo = ss.filter(s => s.status === '待送' && s.lat !== '');
+  $('pendN').textContent = todo.length;
+  const planned = !!t.planned && ss.length;
+  $('routeEmpty').classList.toggle('hide', planned);
+  $('routeDone').classList.toggle('hide', !planned);
+  if (!planned) return;
+  const done = ss.filter(s => s.status === '已送達').length, fail = ss.filter(s => s.status === '沒送成').length;
+  $('sumN').textContent = ss.length; $('sumDone').textContent = done; $('sumFail').textContent = fail; $('sumTodo').textContent = ss.length - done - fail;
+  $('sumBar').style.width = Math.round((done + fail) / ss.length * 100) + '%';
+  $('sumLine').textContent = Math.round((done + fail) / ss.length * 100) + '% 完成 · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + ' · ' + t.depart + ' 出發';
+  const late = ss.filter(isLate);
+  $('planInfo').textContent = t.plan + ' ' + t.planned.slice(5, 16);
+  $('navBatchBox').innerHTML = batchBtn(null);
+  $('estWarn').innerHTML = (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') + (t.est ? '<div class="warnbox">Google 路線服務這次沒回應，公里數和時間是用直線距離估計的。等一下按「重新規劃」可以再試。</div>' : '');
+  renderRoute();
+}
+
+function stopRow(s, route) {
+  const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
+  const sub = [];
+  if (s.items) sub.push(esc(s.items));
+  if (s.qty !== '') sub.push(s.qty + ' 件');
+  const leg = route && s.legKm !== '' ? '<div class="sub">' + s.legKm + ' km · ' + fmtMin(s.legMin) + '</div>' : '';
+  const warn = s.lat === '' ? ' <button class="badge fail" onclick="editPin(\'' + s.id + '\')">找不到位置 › 放到地圖上</button>' :
+    s.geo === '約略' ? ' <button class="badge warn" onclick="editPin(\'' + s.id + '\')">約略 › 修正</button>' : '';
+  const tw = twTag(s, route);
+  return '<div class="stop">' + (route ? '<span class="num ' + cls + '">' + s.seq + '</span>' : '') +
+    '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + warn + '</div>' +
+    (tw ? '<div class="sub">' + tw + '</div>' : '') + (sub.length ? '<div class="sub">' + sub.join('　') + '</div>' : '') + leg +
+    (s.status === '沒送成' && s.reason ? '<div class="sub" style="color:var(--red)">原因：' + esc(s.reason) + '</div>' : '') + '</div>' +
+    '<div style="text-align:right">' + badgeOf(s) + '<br><button class="more" onclick="stopMenu(\'' + s.id + '\')">•••</button></div></div>';
+}
+
+function renderRoute() {
+  const t = ST.trip, ss = ST.reorder || ST.stops;
+  const start = '<div class="stop"><span class="num start">▶</span><div class="grow addr">' + esc(t.line && t.line.from && t.start && (Math.abs(t.line.from.lat - t.slat) > 1e-4 || Math.abs(t.line.from.lng - t.slng) > 1e-4) ? '目前位置' : (t.start || '目前位置')) + '</div></div>';
+  let body;
+  if (ST.reorder) {
+    body = ss.map((s, i) => '<div class="stop drag-row" data-i="' + i + '"><span class="num">' + (i + 1) + '</span><div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + '</div>' + (twText(s) ? '<div class="sub">' + twTag(s) + '</div>' : '') + '</div>' +
+      '<span class="handle" title="按住拖曳">☰</span></div>').join('');
+  } else body = ss.map(s => stopRow(s, true)).join('');
+  const endS = t.endMode === '最後一家' ? '' : '<div class="stop"><span class="num end">⚑</span><div class="grow addr">' + esc(endLabel(t)) + '</div></div>';
+  $('routeList').innerHTML = start + body + endS;
+  if (ST.reorder) bindDrag();
+}
+/**
+ * 拖曳排序（像 Google 地圖）：按住 ☰ 上下拖，那一家跟著手指走；
+ * 經過別一家的一半就交換（被擠開的那家滑過去）；拖到可見範圍的上下邊緣會自動捲動，越靠邊越快
+ */
+function bindDrag() {
+  const list = $('routeList');
+  const renum = () => list.querySelectorAll('.drag-row .num').forEach((n, k) => { n.textContent = k + 1; });
+  const slide = (el, from) => {   // 被擠開的那家：從原位置滑到新位置
+    const d = from - el.getBoundingClientRect().top;
+    if (!d) return;
+    el.style.transition = 'none'; el.style.transform = 'translateY(' + d + 'px)';
+    el.getBoundingClientRect();
+    el.style.transition = 'transform .15s ease-out'; el.style.transform = '';
+  };
+  list.querySelectorAll('.handle').forEach(h => h.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    const row = h.closest('.drag-row');
+    const grab = e.clientY - row.getBoundingClientRect().top;   // 手指按在這一家的哪裡
+    let y = e.clientY, dy = 0, timer, last = performance.now();
+    row.classList.add('dragging');
+    try { h.setPointerCapture(e.pointerId); } catch (err) {}
+    const follow = () => {   // 讓這一家停在手指下面
+      const natural = row.getBoundingClientRect().top - dy;
+      dy = (y - grab) - natural;
+      row.style.transform = 'translateY(' + dy + 'px)';
+    };
+    const step = () => {
+      follow();
+      const mid = y - grab + row.offsetHeight / 2;
+      let moved = false;
+      for (;;) {
+        const prev = row.previousElementSibling, next = row.nextElementSibling;
+        if (prev && prev.classList.contains('drag-row')) {
+          const r = prev.getBoundingClientRect();
+          if (mid < r.top + r.height / 2) { const t0 = r.top; list.insertBefore(prev, row.nextSibling); slide(prev, t0); moved = true; follow(); continue; }   // 搬旁邊那家（搬正在拖的那家，手機會把手指的追蹤弄丟）
+        }
+        if (next && next.classList.contains('drag-row')) {
+          const r = next.getBoundingClientRect();
+          if (mid > r.top + r.height / 2) { const t0 = r.top; list.insertBefore(next, row); slide(next, t0); moved = true; follow(); continue; }
+        }
+        break;
+      }
+      if (moved) { renum(); try { navigator.vibrate && navigator.vibrate(8); } catch (err) {} }
+    };
+    const scroll = now => {   // 自動捲動：可見範圍（固定的標題、提示下面）上下 80px 內，越靠邊越快，最快每秒約 800px
+      const dt = Math.min(50, now - last); last = now;
+      const bar = $('reBar').getBoundingClientRect();
+      const tb = $('tabbar').getBoundingClientRect();
+      const top = Math.max(0, bar.bottom), bottom = tb.height ? tb.top : innerHeight, zone = 80;   // 可見範圍：提示下面到導航列上面
+      let v = 0;
+      if (y < top + zone) v = -Math.min(1, (top + zone - y) / zone);
+      else if (y > bottom - zone) v = Math.min(1, (y - bottom + zone) / zone);
+      if (v) {
+        const before = scrollY;
+        window.scrollBy(0, Math.sign(v) * v * v * 0.8 * dt);
+        if (scrollY !== before) step();
+      }
+      timer = requestAnimationFrame(scroll);
+    };
+    timer = requestAnimationFrame(scroll);
+    const move = ev => { y = ev.clientY; step(); };
+    const up = () => {
+      cancelAnimationFrame(timer);
+      h.removeEventListener('pointermove', move); h.removeEventListener('pointerup', up); h.removeEventListener('pointercancel', up);
+      row.classList.remove('dragging');
+      row.style.transform = '';
+      const old = ST.reorder;
+      ST.reorder = [...list.querySelectorAll('.drag-row')].map(r => old[+r.dataset.i]);
+      renderRoute();
+    };
+    h.addEventListener('pointermove', move); h.addEventListener('pointerup', up); h.addEventListener('pointercancel', up);
+  }));
+}
+function toggleReorder() {
+  ST.reorder = ST.reorder ? null : ST.stops.slice();
+  $('reBar').classList.toggle('hide', !ST.reorder);
+  $('reBtn').textContent = ST.reorder ? '取消' : '調整順序';
+  renderRoute();
+}
+function saveReorder() {
+  const ids = ST.reorder.map(s => s.id);
+  call('setOrder', { trip: ST.trip.id, ids }, '儲存順序…').then(() => call('planRoute', { trip: ST.trip.id, mode: 'manual' }, '重算距離和時間…')).then(r => {
+    ST.reorder = null; $('reBar').classList.add('hide'); $('reBtn').textContent = '調整順序'; refresh(r); toast('已照你排的順序重算');
+  });
+}
+
+/* ================= 起點、終點 ================= */
+function openEnds() {
+  const t = ST.trip;
+  sheet('<h2>起點、終點、出發時間</h2><label class="f">出發時間（推算每一站幾點到）</label><input id="dpIn" class="in" type="time" value="' + esc(t.depart) + '">' +
+    '<label class="f">起點</label><input id="stIn" class="in" value="' + esc(t.start) + '">' +
+    (ST.home ? '<button class="sug" id="stHome">🏠 公司：' + esc(ST.home.addr) + '</button>' : '') +
+    '<label class="f">終點</label>' + ['回起點', '最後一家', '指定地址'].map(m => '<label class="opt"><input type="radio" name="em" value="' + m + '"' + (t.endMode === m ? ' checked' : '') + '><span>' +
+      (m === '回起點' ? '回到起點' : m === '最後一家' ? '送完最後一家就結束' : '指定地址') + '</span></label>').join('') +
+    '<input id="enIn" class="in" value="' + esc(t.end) + '" placeholder="終點地址">' +
+    '<p><button class="btn" id="enGo">儲存</button></p>', (el, close) => {
+    const home = el.querySelector('#stHome');
+    if (home) home.onclick = () => { $('stIn').value = ST.home.addr; };
+    el.querySelector('#enGo').onclick = async () => {
+      const patch = { depart: $('dpIn').value };
+      const sa = $('stIn').value.trim(), em = el.querySelector('input[name=em]:checked').value, ea = $('enIn').value.trim();
+      if (sa && sa !== t.start) {
+        if (ST.home && sa === ST.home.addr) patch.start = ST.home;
+        else { const g = (await call('geocode', { addrs: [sa] }, '查起點…'))[0]; if (!g.ok) { alert('找不到起點地址：' + sa); return; } patch.start = { addr: sa, lat: g.lat, lng: g.lng }; }
+      }
+      patch.endMode = em;
+      if (em === '指定地址') {
+        if (!ea) { alert('請填終點地址'); return; }
+        const g = (await call('geocode', { addrs: [ea] }, '查終點…'))[0];
+        if (!g.ok) { alert('找不到終點地址：' + ea); return; }
+        patch.end = { addr: ea, lat: g.lat, lng: g.lng };
+      }
+      call('updateTrip', { id: t.id, patch }, '儲存中…').then(r => {
+        close(); refresh(r);
+        if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '重算時間…').then(refresh);   // 預計到達跟著更新
+      });
+    };
+  });
+}
+
+/* ================= 送貨點選單、編輯 ================= */
+function stopMenu(id) {
+  const s = ST.stops.find(x => x.id === id);
+  if (!s) return;
+  sheet('<h2 style="word-break:break-all">' + esc(s.addr) + '</h2>' + (s.client ? '<div><b>' + esc(s.client) + '</b></div>' : '') +
+    (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') + (s.items ? '<div class="mut">品項：' + esc(s.items) + '</div>' : '') +
+    (s.note ? '<div class="mut">備註：' + esc(s.note) + '</div>' : '') +
+    '<div style="display:grid;gap:10px;margin-top:14px">' +
+    (s.lat !== '' ? '<a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + mapsUrl(s) + '">🧭 導航到這裡</a>' : '') +
+    (s.phone ? '<a class="btn sec" style="text-align:center;text-decoration:none" href="tel:' + telOf(s.phone) + '">📞 打電話 ' + esc(s.phone) + '</a>' : '') +
+    (s.status !== '已送達' ? '<button class="btn sec" data-a="done">✓ 標記已送達</button>' : '') +
+    (s.status !== '沒送成' ? '<button class="btn sec" data-a="fail">✗ 標記沒送成</button>' : '') +
+    (s.status !== '待送' ? '<button class="btn sec" data-a="todo">↺ 改回待送</button>' : '') +
+    '<button class="btn sec" data-a="pin">📍 在地圖上修正位置</button><button class="btn sec" data-a="edit">✎ 修改（含指定時段）</button><button class="btn sec" data-a="del" style="color:var(--red)">刪除這一家</button></div>', (el, close) => {
+    el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      const a = b.dataset.a;
+      close();
+      if (a === 'done') setStatus(s, '已送達');
+      else if (a === 'fail') askFail(s);
+      else if (a === 'todo') setStatus(s, '待送');
+      else if (a === 'edit') editStop(s);
+      else if (a === 'pin') editPin(s.id);
+      else if (a === 'del' && confirm('確定刪除「' + (s.client || s.addr) + '」？')) call('deleteStop', { id: s.id }, '刪除中…').then(refresh);
+    });
+  });
+}
+function setStatus(s, status, reason) {
+  return call('updateStop', { id: s.id, patch: { status, reason } }, '儲存中…').then(r => { refresh(r); if (ST.view === 'drive') renderDrive(); });
+}
+const REASONS = ['客戶不在', '拒收', '地址錯誤', '店休', '來不及送', '其他'];
+function askFail(s) {
+  sheet('<h2>沒送成的原因</h2><div class="reasons">' + REASONS.map(x => '<button class="btn sec" data-r="' + x + '">' + x + '</button>').join('') + '</div>', (el, close) => {
+    el.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
+      let r = b.dataset.r;
+      if (r === '其他') { r = prompt('請輸入原因') || ''; if (!r) return; }
+      close();
+      setStatus(s, '沒送成', r);
+    });
+  });
+}
+function editStop(s) {
+  sheet('<h2>修改</h2><label class="f">客戶</label><input id="esC" class="in" value="' + esc(s.client) + '">' +
+    '<label class="f">地址</label><input id="esA" class="in" value="' + esc(s.addr) + '">' +
+    '<label class="f">電話</label><input id="esP" class="in" type="tel" value="' + esc(s.phone) + '">' +
+    '<label class="f">件數</label><input id="esQ" class="in" inputmode="decimal" value="' + esc(s.qty) + '">' +
+    '<label class="f">備註</label><input id="esN" class="in" value="' + esc(s.note) + '">' +
+    '<label class="f">指定時段（沒有就空白）</label><div class="row"><span>幾點以後</span><input id="esO" class="in grow" type="time" value="' + esc(s.open) + '"></div>' +
+    '<div class="row" style="margin-top:8px"><span>幾點以前</span><input id="esX" class="in grow" type="time" value="' + esc(s.close) + '"></div>' +
+    '<p><button class="btn" id="esGo">儲存</button></p>', (el, close) => {
+    el.querySelector('#esGo').onclick = async () => {
+      const patch = { client: $('esC').value, phone: $('esP').value, note: $('esN').value, qty: $('esQ').value, open: $('esO').value, close: $('esX').value };
+      const twChanged = patch.open !== s.open || patch.close !== s.close;
+      const a = $('esA').value.trim();
+      if (a !== s.addr || s.lat === '') {
+        const g = (await call('geocode', { addrs: [a] }, '查地址…'))[0];
+        if (!g.ok && !confirm('找不到這個地址的位置，還是要存嗎？（不會排進路線）')) return;
+        Object.assign(patch, { addr: a, lat: g.ok ? g.lat : '', lng: g.ok ? g.lng : '', geo: g.geo });
+      }
+      call('updateStop', { id: s.id, patch }, '儲存中…').then(r => {
+        close(); refresh(r);
+        if (twChanged && r.trip.planned) toast('時段改了，到「路線規劃」按「重新規劃」會照新的時段排', 4000);
+      });
+    };
+  });
+}
+function tripMenu() {
+  const t = ST.trip;
+  const left = ST.stops.filter(s => s.status !== '已送達').length;
+  sheet('<h2>' + esc(t.name) + '</h2><div style="display:grid;gap:10px">' +
+    '<button class="btn sec" data-a="rename">✎ 改名稱、日期、司機</button>' +
+    (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家複製到明天</button>' : '') +
+    '<button class="btn sec" data-a="del" style="color:var(--red)">刪除這個行程</button></div>', (el, close) => {
+    el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
+      close();
+      const a = b.dataset.a;
+      if (a === 'rename') renameTrip();
+      else if (a === 'carry') carryOver();
+      else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { ST.trip = null; go({ v: 'home' }); });
+    });
+  });
+}
+function renameTrip() {
+  const t = ST.trip;
+  sheet('<h2>行程資料</h2><label class="f">名稱</label><input id="rnN" class="in" value="' + esc(t.name) + '"><label class="f">日期</label><input id="rnD" class="in" type="date" value="' + esc(t.date) + '">' +
+    '<label class="f">司機</label><input id="rnR" class="in" value="' + esc(t.driver) + '"><p><button class="btn" id="rnGo">儲存</button></p>', (el, close) => {
+    el.querySelector('#rnGo').onclick = () => call('updateTrip', { id: t.id, patch: { name: $('rnN').value, date: $('rnD').value, driver: $('rnR').value } }, '儲存中…').then(r => { close(); refresh(r); });
+  });
+}
+function carryOver() {
+  call('carryOver', { id: ST.trip.id }, '複製中…').then(r => { setTrip(r); ST.tab = 'list'; toast('已建立新行程「' + r.trip.name + '」'); go({ v: 'trip', id: r.trip.id }); });
+}
+
+/* ================= 新增地址（語音、打字、以前的客戶） ================= */
+/** 新增地址（插單）。voice：一打開就開始聽（開車時用），說完自動查 */
+function openAdd(opt) {
+  const voice = opt && opt.voice;
+  sheet('<h2>新增送貨地址</h2>' +
+    '<button class="btn" id="adMic" style="font-size:20px;padding:16px;margin-bottom:10px">🎤 按這裡用說的（地址或客戶名稱）</button>' +
+    '<input id="adA" class="in" placeholder="或打字：地址、客戶名稱" autocomplete="off"><div id="adSug"></div>' +
+    '<label class="f">客戶</label><input id="adC" class="in" placeholder="可以不填">' +
+    '<label class="f">備註</label><input id="adN" class="in" placeholder="可以不填">' +
+    '<div id="adRes"></div><p><button class="btn" id="adGo">查地址</button></p>' +
+    (ST.trip.planned ? '<div class="mut">路線已經規劃過：新加的地址會自動插在最順路的位置。</div>' : ''), (el, close) => {
+    let picked = null, timer;
+    const inA = $('adA'), go = el.querySelector('#adGo');
+    const reset = () => { picked = null; $('adRes').innerHTML = ''; go.textContent = '查地址'; };
+    inA.oninput = () => {
+      reset();
+      clearTimeout(timer);
+      const q = inA.value.trim();
+      if (q.length < 2) { $('adSug').innerHTML = ''; return; }
+      timer = setTimeout(() => call('findClients', { q }, false).then(list => {
+        if (!$('adSug') || inA.value.trim() !== q) return;   // 視窗已經關了、或字已經改了
+        $('adSug').innerHTML = list.length ? '<div class="mut" style="margin-top:6px">以前送過：</div>' + list.map((c, i) => '<button class="sug" data-i="' + i + '"><b>' + esc(c.client || '（沒有名稱）') + '</b><br>' + esc(c.addr) + '</button>').join('') : '';
+        $('adSug').querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+          const c = list[+b.dataset.i];
+          inA.value = c.addr; $('adC').value = c.client; $('adSug').innerHTML = '';
+          picked = Object.assign({}, c, { ok: true });
+          $('adRes').innerHTML = '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf">✓ ' + esc(c.addr) + '</div>';
+          go.textContent = '✓ 加入';
+        });
+      }), 350);
+    };
+    // 說完：像地址就自動查；像客戶名稱就等「以前送過」的清單跳出來
+    const heard = () => { if (/[路街道巷弄號村里鄉鎮市區]/.test(inA.value)) go.click(); };
+    el.querySelector('#adMic').onclick = () => listen(inA, heard);
+    if (voice) setTimeout(() => listen(inA, heard), 250);
+    go.onclick = async () => {
+      const a = inA.value.trim();
+      if (!a) { inA.focus(); return; }
+      if (!picked) {
+        const g = (await call('geocode', { addrs: [a] }, '查地址…'))[0];
+        if (!g.ok) { $('adRes').innerHTML = '<div class="warnbox">找不到「' + esc(a) + '」，請檢查縣市、路名、門牌號碼。</div>'; return; }
+        picked = g;
+        $('adRes').innerHTML = '<div class="warnbox" style="' + (g.geo === '精確' ? 'background:var(--gl);border-color:#9fd9bf' : '') + '">' + (g.geo === '精確' ? '✓ 找到：' : '⚠ 只找到大概位置：') + esc(g.found) + '<br><a target="_blank" href="https://www.google.com/maps/search/?api=1&query=' + g.lat + ',' + g.lng + '">在地圖上看</a></div>';
+        go.textContent = '✓ 加入';
+        return;
+      }
+      const stop = { addr: a, client: $('adC').value, note: $('adN').value, lat: picked.lat, lng: picked.lng, geo: picked.geo, phone: picked.phone || '' };
+      call('addStops', { trip: ST.trip.id, stops: [stop] }, '加入中…').then(r => {
+        close(); refresh(r);
+        if (ST.view === 'drive') renderDrive();
+        if (ST.trip.planned) call('planRoute', { trip: ST.trip.id, mode: 'manual' }, '更新距離…').then(x => { refresh(x); if (ST.view === 'drive') renderDrive(); });
+        toast(ST.trip.planned ? '已加入，插在最順路的位置' : '已加入');
+      });
+    };
+    if (!voice) setTimeout(() => inA.focus(), 150);
+  });
+}
+/** 語音輸入：瀏覽器支援就直接聽；不支援就請他按鍵盤上的麥克風 */
+function listen(input, done) {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const fallback = () => { input.focus(); toast('這支手機不能直接聽，請按鍵盤上的 🎤 麥克風說出地址', 4500); };
+  if (!SR) { fallback(); return; }
+  let r;
+  try { r = new SR(); } catch (e) { fallback(); return; }
+  r.lang = 'zh-TW'; r.interimResults = false; r.maxAlternatives = 1;
+  r.onresult = e => { input.value = spokenAddr(e.results[0][0].transcript); input.dispatchEvent(new Event('input')); if (done) done(); };
+  r.onerror = fallback;
+  try { r.start(); toast('🎤 請說地址或客戶名稱…', 3500); } catch (e) { fallback(); }
+}
+/** 語音常把門牌念成中文數字：二百號 → 200號 */
+function spokenAddr(s) {
+  const D = { 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+  const cn = t => {
+    let n = 0, cur = 0;
+    for (const ch of t) {
+      if (ch in D) cur = D[ch];
+      else if (ch === '十') { n += (cur || 1) * 10; cur = 0; }
+      else if (ch === '百') { n += cur * 100; cur = 0; }
+      else if (ch === '千') { n += cur * 1000; cur = 0; }
+    }
+    return n + cur;
+  };
+  return s.replace(/\s+/g, '').replace(/([零〇一二兩三四五六七八九十百千]+)(?=[號巷弄樓鄰之])/g, m => String(cn(m))).replace(/之([零〇一二三四五六七八九十]+)/g, (m, x) => '之' + cn(x));
+}
+
+/* ================= 規劃路線 ================= */
+function openPlan() {
+  const hasStart = !!ST.trip.start;
+  const started = ST.stops.some(s => s.status !== '待送');
+  sheet('<h2>路徑規劃選項</h2><b>路線規劃方式</b>' +
+    '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統自動最佳化（推薦）</span></label>' +
+    '<label class="opt"><input type="radio" name="pm" value="manual"><span>照送貨清單目前的順序</span></label>' +
+    '<b>出發地點</b>' +
+    '<label class="opt"><input type="radio" name="pf" value="start"' + (hasStart && !started ? ' checked' : '') + (hasStart ? '' : ' disabled') + '><span>起點：' + esc(ST.trip.start || '（未設定）') + '</span></label>' +
+    '<label class="opt"><input type="radio" name="pf" value="here"' + (!hasStart || started ? ' checked' : '') + '><span>我現在的位置<div class="mut">已經在送貨途中，請選這個，會從現在的位置重排剩下的。</div></span></label>' +
+    '<p><button class="btn" id="plGo">開始規劃</button></p>', (el, close) => {
+    el.querySelector('#plGo').onclick = async () => {
+      const mode = el.querySelector('input[name=pm]:checked').value, pf = el.querySelector('input[name=pf]:checked').value;
+      let from = null;
+      if (pf === 'here') {
+        from = await here();
+        if (!from) {
+          if (!hasStart) { alert('抓不到目前位置，請先設定起點（送貨清單上方的「起點」）。'); return; }
+          toast('抓不到目前位置，改從起點出發', 3500);
+        }
+      }
+      close();
+      call('planRoute', { trip: ST.trip.id, mode, from }, '規劃路線中…（家數多要等十幾秒）').then(r => { refresh(r); toast('路線規劃好了'); });
+    };
+  });
+}
+function here() {
+  return new Promise(ok => {
+    if (!navigator.geolocation) { ok(null); return; }
+    busy('抓目前位置…');
+    navigator.geolocation.getCurrentPosition(p => { busy(false); ok({ lat: p.coords.latitude, lng: p.coords.longitude }); },
+      () => { busy(false); ok(null); }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+}
+
+/* ================= 開始送貨 ================= */
+function showDrive() { if (!ST.drive || ST.drive.trip !== ST.trip.id) ST.drive = { skip: [], trip: ST.trip.id }; show('drive'); renderDrive(); }
+function renderDrive() {
+  if (ST.view !== 'drive') return;
+  const ss = ST.stops;
+  const todo = ss.filter(s => s.status === '待送');
+  $('hTitle').textContent = ST.trip.name;
+  if (!todo.length) {
+    const fail = ss.filter(s => s.status === '沒送成');
+    $('driveCard').innerHTML = '<div style="text-align:center"><div style="font-size:52px">🎉</div><h2>這趟送完了</h2><div class="mut">已送達 ' + (ss.length - fail.length) + ' 家' + (fail.length ? '，沒送成 ' + fail.length + ' 家' : '') + '</div>' +
+      (fail.length ? '<p><button class="btn" onclick="carryOver()">沒送成的 ' + fail.length + ' 家複製到明天</button></p>' : '') +
+      '<p><button class="btn sec" onclick="go({ v: \'trip\', id: ST.trip.id })">回到行程</button></p></div>';
+    $('driveNext').innerHTML = '';
+    return;
+  }
+  let cur = todo.find(s => ST.drive.skip.indexOf(s.id) < 0);
+  if (!cur) { ST.drive.skip = []; cur = todo[0]; }
+  const doneN = ss.length - todo.length;
+  $('driveCard').innerHTML = '<div class="drive-num">第 ' + cur.seq + ' 站　（已完成 ' + doneN + ' / ' + ss.length + '）</div>' +
+    '<div class="bar"><i style="width:' + Math.round(doneN / ss.length * 100) + '%"></i></div>' +
+    (cur.client ? '<div class="drive-client" style="margin-top:12px">' + esc(cur.client) + '</div>' : '') +
+    '<div class="drive-addr">' + esc(cur.addr) + (cur.geo === '約略' ? ' <span class="badge warn">約略</span>' : '') + '</div>' +
+    (twText(cur) || cur.eta ? '<div style="margin:4px 0">' + twTag(cur, true) + '</div>' : '') +
+    (cur.lat === '' || cur.geo === '約略' ? '<div class="warnbox">這家的位置' + (cur.lat === '' ? '找不到' : '是約略的') + '。到了以後按這個，下次就記住：<p style="margin:8px 0 0"><button class="btn sec" onclick="pinHereFor(\'' + cur.id + '\')">📍 我到了，記下這家的位置</button></p></div>' : '') +
+    (cur.legKm !== '' ? '<div class="mut">距離 ' + cur.legKm + ' km，約 ' + fmtMin(cur.legMin) + '</div>' : '') +
+    (cur.items || cur.qty !== '' ? '<div style="margin-top:8px;font-size:18px">📦 ' + esc(cur.items) + (cur.qty !== '' ? '　<b>' + cur.qty + ' 件</b>' : '') + '</div>' : '') +
+    (cur.orders ? '<div class="mut">訂單：' + esc(cur.orders) + '</div>' : '') +
+    (cur.note ? '<div class="warnbox">📝 ' + esc(cur.note) + '</div>' : '') +
+    '<div class="big2">' + (cur.lat !== '' ? '<a class="btn" style="text-align:center;text-decoration:none;background:var(--blue)" target="_blank" href="' + mapsUrl(cur) + '">🧭 導航</a>' : '<span class="btn" style="background:#aab">沒有位置</span>') +
+    (cur.phone ? '<a class="btn sec" style="text-align:center;text-decoration:none" href="tel:' + telOf(cur.phone) + '">📞 電話</a>' : '<button class="btn sec" onclick="driveSkip(\'' + cur.id + '\')">⏭ 先跳過</button>') + '</div>' +
+    batchBtn(cur) +
+    '<div class="big2"><button class="btn" onclick="driveDone(\'' + cur.id + '\')">✓ 已送達</button><button class="btn red" onclick="askFail(ST.stops.find(s=>s.id===\'' + cur.id + '\'))">✗ 沒送成</button></div>' +
+    (cur.phone ? '<p style="text-align:center"><button class="btn sec small" onclick="driveSkip(\'' + cur.id + '\')">⏭ 先跳過，送下一家</button></p>' : '');
+  $('driveCard').insertAdjacentHTML('beforeend', '<p style="margin:12px 0 0"><button class="btn sec" style="padding:16px;font-size:19px" onclick="openAdd({ voice: true })">🎤 說地址插單</button></p>');
+  const nx = todo.filter(s => s.id !== cur.id).slice(0, 3);
+  $('driveNext').innerHTML = nx.length ? '<div class="card"><b>接下來</b>' + nx.map(s => '<div class="prev">' + s.seq + '. ' + esc(s.client ? s.client + '　' : '') + '<span class="mut">' + esc(s.addr) + '</span></div>').join('') + '</div>' : '';
+}
+function driveDone(id) { setStatus(ST.stops.find(s => s.id === id), '已送達').then(() => toast('✓ 已送達')); }
+function driveSkip(id) { ST.drive.skip.push(id); renderDrive(); }
+
+/* ================= 地圖 ================= */
+let MAP, LAYER;
+function loadScript(src) {
+  return new Promise((ok, fail) => { const s = document.createElement('script'); s.src = src; s.onload = ok; s.onerror = () => fail(new Error('載入失敗：' + src)); document.head.appendChild(s); });
+}
+let PIN = null;   // 正在修正位置：{stop, marker}
+async function ensureMap() {
+  $('mapWrap').classList.remove('hide');
+  if (!window.L) { busy('載入地圖…'); try { await loadScript('https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js'); } catch (e) { busy(false); alert(e.message); closeMap(); return false; } busy(false); }
+  if (!MAP) {
+    MAP = L.map('map', { zoomControl: true });
+    let errs = 0, osm = false;
+    const nlsc = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 19, attribution: '© 內政部國土測繪中心' }).addTo(MAP);
+    const photo = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 19, attribution: '© 內政部國土測繪中心' });
+    nlsc.on('tileerror', () => { if (++errs > 6 && !osm) { osm = true; MAP.removeLayer(nlsc); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(MAP); } });
+    L.control.layers({ '地圖': nlsc, '空照圖': photo }, null, { position: 'topright', collapsed: false }).addTo(MAP);
+    LAYER = L.layerGroup().addTo(MAP);
+    MAP.on('click', e => { if (PIN) PIN.marker.setLatLng(e.latlng); });
+  }
+  LAYER.clearLayers();
+  return true;
+}
+async function showMap() {
+  PIN = null;
+  show('map');
+  $('hTitle').textContent = ST.trip.name;
+  $('pinBar').classList.add('hide');
+  $('mapWrap').classList.remove('full');
+  $('mapTitle').textContent = ST.trip.name + '　地圖';
+  if (!(await ensureMap())) return;
+  const t = ST.trip, pts = [];
+  const icon = (txt, cls) => L.divIcon({ className: 'pin ' + (cls || ''), html: txt });
+  const from = t.line && t.line.from ? t.line.from : (t.slat !== '' ? { lat: t.slat, lng: t.slng } : null);
+  if (from) { L.marker([from.lat, from.lng], { icon: icon('▶', 's') }).addTo(LAYER).bindPopup('起點'); pts.push([from.lat, from.lng]); }
+  (t.line && t.line.lines || []).forEach(enc => L.polyline(decodeLine(enc), { color: '#1e6fd9', weight: 5, opacity: .8 }).addTo(LAYER));
+  ST.stops.filter(s => s.lat !== '').forEach(s => {
+    const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
+    L.marker([s.lat, s.lng], { icon: icon(s.seq, cls) }).addTo(LAYER)
+      .bindPopup('<b>' + s.seq + '. ' + esc(s.client) + '</b><br>' + esc(s.addr) + '<br>' + badgeOf(s) + (s.geo === '約略' ? ' <span class="badge warn">約略</span>' : '') + ' ' + twTag(s, true) +
+        '<br><a target="_blank" href="' + mapsUrl(s) + '">🧭 導航到這裡</a>　<a href="#" onclick="editPin(\'' + s.id + '\');return false">📍 修正位置</a>');
+    pts.push([s.lat, s.lng]);
+  });
+  const end = t.line && t.line.end;
+  if (end && (!from || Math.abs(end.lat - from.lat) > 1e-5 || Math.abs(end.lng - from.lng) > 1e-5)) { L.marker([end.lat, end.lng], { icon: icon('⚑', 'e') }).addTo(LAYER).bindPopup('終點'); pts.push([end.lat, end.lng]); }
+  setTimeout(() => { MAP.invalidateSize(); if (pts.length) MAP.fitBounds(pts, { padding: [30, 30], maxZoom: 16 }); else MAP.setView([23.6, 120.9], 7); }, 50);
+}
+/**
+ * 修正位置：紅點可以拖、點地圖也會移過去；找不到位置的從公司附近開始。
+ * PINREQ = {title, lat, lng, save(lat,lng) → Promise}；是一個頁面（返回鍵＝取消）
+ */
+let PINREQ = null;
+function editPin(id) {
+  const s = ST.stops.find(x => x.id === id);
+  if (!s) return;
+  PINREQ = { title: (s.client ? s.client + '　' : '') + s.addr, lat: s.lat, lng: s.lng,
+    save: (lat, lng) => call('setPin', { id: s.id, lat, lng }, '儲存位置…').then(r => { setTrip(r); afterPin(r); }) };
+  go({ v: 'pinedit' });
+}
+function editPinAddr(c) {
+  PINREQ = { title: (c.client ? c.client + '　' : '') + c.addr, lat: c.lat, lng: c.lng,
+    save: (lat, lng) => call('setPinAddr', { addr: c.addr, lat, lng }, '儲存位置…').then(r => {
+      toast('已記下位置' + (r.updated ? '，還沒送的 ' + r.updated + ' 站也改好了' : '') + '，下次送這個地址會直接用', 3500);
+      if (ST.trip && r.updated) call('getTrip', { id: ST.trip.id }, false).then(setTrip);
+    }) };
+  go({ v: 'pinedit' });
+}
+async function showPinEditor(req) {
+  show('pinedit');
+  if (!(await ensureMap())) return;
+  $('mapWrap').classList.add('full');
+  $('mapTitle').textContent = '修正位置';
+  $('pinWho').textContent = req.title;
+  $('pinBar').classList.remove('hide');
+  const at = req.lat !== '' ? [req.lat, req.lng] : ST.home ? [ST.home.lat, ST.home.lng] : [23.6, 120.4];
+  const marker = L.marker(at, { draggable: true, autoPan: true, icon: L.divIcon({ className: 'pin fix', html: '' }) }).addTo(LAYER);
+  PIN = { marker };
+  setTimeout(() => { MAP.invalidateSize(); MAP.setView(at, req.lat !== '' ? 17 : 13); }, 50);
+}
+async function pinHere() {
+  const p = await here();
+  if (!p) { alert('抓不到目前位置（手機可能沒允許定位）。請改用拖的。'); return; }
+  PIN.marker.setLatLng([p.lat, p.lng]);
+  MAP.setView([p.lat, p.lng], 18);
+}
+function pinSave() {
+  const ll = PIN.marker.getLatLng(), req = PINREQ;
+  req.save(ll.lat, ll.lng).then(() => { PINREQ = null; goBack(); });
+}
+/** 開始送貨時：司機到了，直接用現在的位置（不換頁） */
+async function pinHereFor(id) {
+  const p = await here();
+  if (!p) { alert('抓不到目前位置（手機可能沒允許定位）。可以回到清單按「約略 › 修正」用拖的。'); return; }
+  call('setPin', { id, lat: p.lat, lng: p.lng }, '記下位置…').then(r => { refresh(r); if (ST.view === 'drive') renderDrive(); afterPin(r); });
+}
+function afterPin(r) {
+  toast('已記下位置，下次送這個地址會直接用');
+  if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, false).then(x => { setTrip(x); if (ST.view === 'trip') render(); if (ST.view === 'drive') renderDrive(); });   // 距離、時間跟著更新（順序不變）
+}
+function closeMap() { $('mapWrap').classList.add('hide'); $('pinBar').classList.add('hide'); PIN = null; }
+/** Google 編碼折線 → [[lat,lng]] */
+function decodeLine(s) {
+  const out = [];
+  let i = 0, lat = 0, lng = 0;
+  while (i < s.length) {
+    for (const k of [0, 1]) {
+      let b, shift = 0, r = 0;
+      do { b = s.charCodeAt(i++) - 63; r |= (b & 31) << shift; shift += 5; } while (b >= 32);
+      const d = r & 1 ? ~(r >> 1) : r >> 1;
+      if (k === 0) lat += d; else lng += d;
+    }
+    out.push([lat / 1e5, lng / 1e5]);
+  }
+  return out;
+}
+
+/* ================= 匯入 Excel ================= */
+const FIELDS = [
+  ['addr', '地址（必填）', /地址|住址|送貨地|收貨地|address/i],
+  ['phone', '電話', /電話|手機|tel|phone|mobile/i],
+  ['order', '訂單號', /單號|訂單|單據|order/i],
+  ['qty', '件數（箱數）', /件數|數量|箱數|qty|quantity/i],
+  ['item', '品項', /品名|品項|商品|產品|貨品|內容|item|product/i],
+  ['note', '備註', /備註|說明|note|remark/i],
+  ['client', '客戶', /客戶|收件人|收貨人|店名|名稱|姓名|customer|name/i]
+];
+const IMP = { wb: null, rows: [], head: 0, map: {}, groups: [], results: {}, pick: {}, counties: null };
+
+function showImport() {
+  show('import');
+  $('hTitle').textContent = '匯入 Excel';
+  ['imp1', 'imp2', 'imp3'].forEach((x, i) => $(x).classList.toggle('hide', i !== 0));
+  $('fileIn').value = '';
+  xlsxLib().catch(() => {});   // 先在背景下載 Excel 讀取工具
+}
+let xlsxP;
+function xlsxLib() {
+  if (window.XLSX) return Promise.resolve();
+  if (!xlsxP) xlsxP = loadScript('https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js').catch(e => { xlsxP = null; throw e; });
+  return xlsxP;
+}
+async function readFile(f) {
+  if (!f) return;
+  busy('讀取檔案…');
+  try { await xlsxLib(); } catch (e) { busy(false); alert('Excel 讀取工具下載失敗，請確認網路後再選一次檔案'); $('fileIn').value = ''; return; }
+  try {
+    const buf = await f.arrayBuffer();
+    if (/\.(csv|txt)$/i.test(f.name)) {
+      let text;
+      try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('big5').decode(buf); }   // ERP 的 CSV 常是 Big5
+      IMP.wb = XLSX.read(text.replace(/^﻿/, ''), { type: 'string', raw: true });
+    } else IMP.wb = XLSX.read(buf, { type: 'array' });
+  } catch (e) { busy(false); alert('讀不懂這個檔案：' + e.message); return; }
+  busy(false);
+  $('impFile').textContent = f.name;
+  const names = IMP.wb.SheetNames;
+  $('impSheet').classList.toggle('hide', names.length < 2);
+  $('impSheet').innerHTML = names.map(n => '<option>' + esc(n) + '</option>').join('');
+  pickSheet(names[0]);
+  $('imp1').classList.add('hide'); $('imp2').classList.remove('hide');
+}
+function pickSheet(name) {
+  const rows = XLSX.utils.sheet_to_json(IMP.wb.Sheets[name], { header: 1, raw: false, defval: '' })
+    .map(r => r.map(v => String(v).trim())).filter(r => r.some(v => v));
+  IMP.rows = rows;
+  IMP.head = guessHeader(rows);
+  IMP.map = guessMap(rows[IMP.head] || []);
+  renderMap();
+}
+function guessHeader(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) if (rows[i].filter(h => FIELDS.some(f => f[2].test(h))).length >= 2) return i;
+  return 0;
+}
+function guessMap(head) {
+  const used = {}, map = {};
+  const pick = (key, re, pref) => {
+    let j = -1;
+    if (pref) j = head.findIndex((h, k) => !used[k] && pref.test(h));
+    if (j < 0) j = head.findIndex((h, k) => !used[k] && re.test(h));
+    if (j >= 0) { used[j] = 1; map[key] = j; }
+  };
+  pick('addr', FIELDS[0][2], /送貨地址|收貨地址|配送地址/);
+  pick('phone', FIELDS[1][2]);
+  pick('order', FIELDS[2][2], /單號/);
+  pick('qty', FIELDS[3][2], /包裝數量|件數|箱數/);
+  pick('item', FIELDS[4][2]);
+  pick('note', FIELDS[5][2]);
+  pick('client', FIELDS[6][2], /客戶簡稱|客戶名稱|收件人|收貨人/);
+  if (map.addr == null) {   // 沒有標題：找看起來像地址的欄
+    const sample = IMP.rows.slice(0, 20);
+    const j = head.findIndex((_, k) => sample.filter(r => /[市縣].*[路街道巷號]/.test(r[k] || '')).length >= Math.min(3, sample.length));
+    if (j >= 0) map.addr = j;
+  }
+  return map;
+}
+function renderMap() {
+  const head = IMP.rows[IMP.head] || [];
+  const opts = sel => '<option value="">（沒有）</option>' + head.map((h, j) => '<option value="' + j + '"' + (sel === j ? ' selected' : '') + '>' + String.fromCharCode(65 + (j % 26)) + (j >= 26 ? j : '') + '欄：' + esc(h || '(空白)') + '</option>').join('');
+  $('mapTbl').innerHTML = '<tr><td>標題列</td><td><select onchange="IMP.head=+this.value;IMP.map=guessMap(IMP.rows[IMP.head]||[]);renderMap()">' +
+    IMP.rows.slice(0, 10).map((r, i) => '<option value="' + i + '"' + (i === IMP.head ? ' selected' : '') + '>' + esc(r.filter(Boolean).join(' | ').slice(0, 40)) + '</option>').join('') + '</select></td></tr>' +
+    FIELDS.map(f => '<tr><td style="white-space:nowrap">' + f[1] + '</td><td><select data-k="' + f[0] + '">' + opts(IMP.map[f[0]]) + '</select></td></tr>').join('');
+  $('mapTbl').querySelectorAll('select[data-k]').forEach(s => s.onchange = () => { IMP.map[s.dataset.k] = s.value === '' ? undefined : +s.value; renderPreview(); });
+  renderPreview();
+}
+/* ---- 地址欄拆解：ERP 的地址欄常混著電話、交代事項 ---- */
+const COUNTY_RE = /(台北|臺北|新北|桃園|台中|臺中|台南|臺南|高雄|基隆|新竹|苗栗|彰化|南投|雲林|嘉義|屏東|宜蘭|花蓮|台東|臺東|澎湖|金門|連江)(市|縣)/;
+const PARCEL_RE = /寄黑貓|黑貓|宅配|郵寄|寄.{0,6}(貨運|物流)|寄嘉果|寄大理石/;
+const half = t => String(t == null ? '' : t).replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/　/g, ' ');
+const tidy = t => { t = t.replace(/\s+/g, ' ').replace(/^[\s,，、/*;；:：.。\-~]+|[\s,，、/*;；:\-]+$/g, ''); if (/^[(（][^()（）]*[)）]$/.test(t)) t = t.slice(1, -1).trim(); return t; };
+/** 「新竹市香山區中華路五段323巷70號 0965513126 週三不收貨」→ {addr, phones, note} */
+function splitAddr(raw) {
+  let s = half(raw).replace(/\s+/g, ' ').trim();
+  const phones = [];
+  s = s.replace(/(^|[^\d-])(0\d[\d-]{6,12}\d)(?![\d-])/g, (m, pre, p) => {
+    const n = p.replace(/\D/g, '').length;
+    if (n < 9 || n > 10) return m;
+    phones.push(p); return pre + ' ';
+  });
+  const notes = [];
+  const ci = s.search(COUNTY_RE);
+  if (ci > 0) { const pre = tidy(s.slice(0, ci).replace(/^[#\w\s-]*?\d{3,6}\s*$/, '').replace(/^\d{3,6}$/, '')); if (pre && !/^[#\w-]+$/.test(pre)) notes.push(pre); s = s.slice(ci); }
+  s = s.replace(/^\d{3,6}(?=[^\d號巷弄-])/, '').trim();
+  let addr = s, rest = '';
+  const m = s.match(/^(.*?\d+(?:[-之]\d+)*\s*號(?:之\s*\d+)?(?:\s*\d+\s*(?:樓|F|f)(?:之\d+)?)?)/);
+  if (m) { addr = m[1]; rest = s.slice(m[1].length); }
+  else { const p = s.search(/[(（]/); if (p > 0) { addr = s.slice(0, p); rest = s.slice(p); } }
+  addr = addr.replace(/\s+/g, '').replace(/[,，、/]+$/, '');
+  if (!addr) { addr = s.replace(/\s+/g, ''); rest = ''; }
+  if (tidy(rest)) notes.push(tidy(rest));
+  return { addr, phones, note: notes.join(' ') };
+}
+const CITY = /^(台北|新北|桃園|台中|台南|高雄|基隆|新竹|嘉義)市$/;
+/**
+ * 從交代事項讀出指定時段：
+ * 「早上10點後可收貨」→ 10:00 以後；「11點前到貨」「中午前」「早上到」→ 以前；
+ * 「送貨時間 08:00~16:00」「09:00-17:00」→ 時段；「11點後不在」→ 11:00 以前；「12點~13點休息」不算
+ */
+function parseTimes(text) {
+  const t = half(text).replace(/\s+/g, '');
+  let open = '', close = '';
+  const hm = (h, m, pm) => { h = +h; if (pm && h < 12) h += 12; return h >= 5 && h <= 22 ? ('0' + h).slice(-2) + ':' + ('0' + (+m || 0)).slice(-2) : ''; };
+  const range = t.match(/(\d{1,2})[:：](\d{2})[-~～至到](\d{1,2})[:：](\d{2})(?!休|午休)/);
+  if (range && !/休息|午休/.test(t.slice(range.index, range.index + range[0].length + 3))) { open = hm(range[1], range[2]); close = hm(range[3], range[4]); }
+  const re = /(早上|上午|中午|下午|晚上)?(\d{1,2})(?:[:：](\d{2})|點半?|時)(以後|之後|後|以前|之前|前)(不在|不收|休息)?/g;
+  let m;
+  while ((m = re.exec(t))) {
+    const x = hm(m[2], /點半/.test(m[0]) ? 30 : m[3], /下午|晚上/.test(m[1] || ''));
+    if (!x) continue;
+    if (/前/.test(m[4]) || m[5]) { if (!close || x < close) close = x; }
+    else if (!open || x > open) open = x;
+  }
+  if (!close && /中午前|早上到|早上送|上午到|上午送/.test(t)) close = '12:00';
+  if (open && close && open >= close) open = '';   // 讀錯了寧可不要
+  return { open, close };
+}
+function countyOf(addr) {
+  const m = String(addr).match(COUNTY_RE);
+  if (!m) return '沒寫縣市';
+  const c = m[0].replace('臺', '台');
+  return CITY.test(c) ? c : c.slice(0, 2) + '縣';   // 苗栗市→苗栗縣、彰化市→彰化縣
+}
+/** 常送的鄉鎮只寫鄉鎮沒寫縣市：自動補上（查地址比較準） */
+const TOWNS = {
+  '嘉義縣': '朴子|布袋|東石|太保|六腳|義竹|鹿草|新港|民雄|水上|中埔|番路|竹崎|梅山|大林|溪口|阿里山|大埔',
+  '雲林縣': '斗南|斗六|虎尾|北港|西螺|台西|臺西|麥寮|土庫|元長|口湖|水林|四湖|褒忠|大埤|崙背|二崙|莿桐|林內|古坑',
+  '台南市': '新營|鹽水|學甲|白河|後壁|柳營|六甲|麻豆|佳里|北門|將軍|七股|西港|下營|官田|善化'
+};
+function fillCounty(addr) {
+  if (COUNTY_RE.test(addr)) return addr;
+  for (const c in TOWNS) {
+    const m = addr.match(new RegExp('^(' + TOWNS[c] + ')(市|鎮|鄉|區)?'));
+    if (m) return c + m[1] + (m[2] || (c === '台南市' ? '區' : { 朴子: '市', 太保: '市', 斗六: '市' }[m[1]] || (/東石|六腳|義竹|鹿草|新港|水上|中埔|番路|竹崎|梅山|溪口|阿里山|大埔|台西|臺西|麥寮|元長|口湖|水林|四湖|褒忠|大埤|崙背|二崙|莿桐|林內|古坑/.test(m[1]) ? '鄉' : '鎮'))) + addr.slice(m[0].length);
+  }
+  return addr;
+}
+function homeCounty() { return ST.home ? countyOf(ST.home.addr) : ''; }
+
+/** 同一個地址合成一站：品項合併、件數加總；重複的標題列、運費列、沒有地址的列跳過 */
+function groupRows() {
+  const m = IMP.map, g = {}, list = [], head = IMP.rows[IMP.head] || [];
+  let skipped = 0;
+  IMP.rows.slice(IMP.head + 1).forEach(r => {
+    const get = k => (m[k] == null ? '' : String(r[m[k]] || '').trim());
+    const raw = get('addr'), real = get('client') || get('item') || get('order');
+    if (!raw) { if (real) skipped++; return; }
+    if (raw === String(head[m.addr] || '').trim()) return;          // 每一頁重複的標題列
+    if (!real || /^<.*>$|^第\s*\d+\s*頁$/.test(raw)) return;       // 頁首頁尾（第 1 頁、<已確認>、<結束>）
+    const sp = splitAddr(raw);
+    sp.addr = fillCounty(sp.addr);
+    const key = sp.addr.replace(/臺/g, '台');
+    let s = g[key];
+    if (!s) { s = g[key] = { addr: sp.addr, raw, clients: [], orders: [], items: [], notes: [], phones: [], qty: '', rows: 0 }; list.push(s); }
+    s.rows++;
+    const add = (a, v) => { v = String(v || '').trim(); if (v && a.indexOf(v) < 0) a.push(v); };
+    add(s.clients, get('client')); add(s.orders, get('order')); add(s.notes, sp.note); add(s.notes, get('note'));
+    if (get('phone')) add(s.phones, get('phone'));
+    sp.phones.forEach(p => add(s.phones, p));
+    const it = get('item');
+    if (/運費/.test(it)) return;                                // 運費不是貨
+    const q = get('qty').replace(/,/g, ''), n = Number(q);
+    const qs = q !== '' && isFinite(n) ? String(Math.round(n * 100) / 100) : q;
+    add(s.items, it && qs && m.item != null && m.qty != null ? it + '×' + qs : it);
+    if (q !== '' && isFinite(n)) s.qty = Math.round(((s.qty === '' ? 0 : s.qty) + n) * 100) / 100;
+  });
+  IMP.groups = list.map(s => Object.assign({ addr: s.addr, raw: s.raw, county: countyOf(s.addr), parcel: PARCEL_RE.test(s.raw + s.notes.join('')), client: s.clients.join('、'), orders: s.orders.join('、'),
+    items: s.items.join('、'), note: s.notes.join('；'), phone: s.phones.join(' / '), qty: s.qty, rows: s.rows }, parseTimes(s.notes.join(' '))));
+  return skipped;
+}
+function loadCounties() {
+  if (IMP.counties) return IMP.counties;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem('dh_counties') || 'null'); } catch (e) {}
+  IMP.counties = {};
+  (saved || [homeCounty(), '沒寫縣市']).forEach(c => { if (c) IMP.counties[c] = 1; });
+  return IMP.counties;
+}
+function saveCounties() { try { localStorage.setItem('dh_counties', JSON.stringify(Object.keys(IMP.counties))); } catch (e) {} }
+const isPicked = i => (i in IMP.pick ? IMP.pick[i] : !!IMP.counties[IMP.groups[i].county] && !IMP.groups[i].parcel);
+function renderPreview() {
+  if (IMP.map.addr == null) { $('impCnt').textContent = '請先選「地址」是哪一欄'; $('impPrev').innerHTML = ''; $('impCounties').innerHTML = ''; $('impGo').disabled = true; return; }
+  const skipped = groupRows();
+  IMP.pick = {};
+  loadCounties();
+  renderPicks(skipped);
+}
+function renderPicks(skipped) {
+  const gs = IMP.groups;
+  if (skipped != null) IMP.skipped = skipped;
+  const cnt = {};
+  gs.forEach(s => { cnt[s.county] = (cnt[s.county] || 0) + 1; });
+  const order = Object.keys(cnt).sort((a, b) => (a === '沒寫縣市') - (b === '沒寫縣市') || cnt[b] - cnt[a]);
+  $('impCounties').innerHTML = order.map(c => '<label class="chip' + (IMP.counties[c] ? ' on' : '') + '"><input type="checkbox" data-c="' + esc(c) + '"' + (IMP.counties[c] ? ' checked' : '') + '>' + esc(c) + ' ' + cnt[c] + '</label>').join('');
+  $('impCounties').querySelectorAll('[data-c]').forEach(c => c.onchange = () => {
+    if (c.checked) IMP.counties[c.dataset.c] = 1; else delete IMP.counties[c.dataset.c];
+    gs.forEach((s, i) => { if (s.county === c.dataset.c) delete IMP.pick[i]; });
+    saveCounties(); renderPicks();
+  });
+  const idx = gs.map((s, i) => i).sort((a, b) => order.indexOf(gs[a].county) - order.indexOf(gs[b].county) || a - b);
+  const n = gs.filter((s, i) => isPicked(i)).length;
+  $('impGo').disabled = !n;
+  $('impGo').textContent = '查地址、加入行程（' + n + ' 家）';
+  $('impCnt').textContent = '共 ' + gs.length + ' 個地址，勾選 ' + n + ' 家' + (IMP.skipped ? '（' + IMP.skipped + ' 列沒有地址，略過）' : '');
+  $('impPrev').innerHTML = idx.map(i => {
+    const s = gs[i], on = isPicked(i);
+    return '<label class="prev row' + (on ? '' : ' off') + '" style="align-items:flex-start"><input type="checkbox" data-p="' + i + '"' + (on ? ' checked' : '') + '><div class="grow"><b>' + esc(s.client || '') + '</b> ' + esc(s.addr) +
+      (s.parcel ? ' <span class="badge warn">寄貨運</span>' : '') +
+      '<div class="mut">' + [s.phone && '☎ ' + esc(s.phone), s.items && esc(s.items), s.qty !== '' && s.qty + ' 件', twText(s) && twTag(s), s.note && '📝 ' + esc(s.note)].filter(Boolean).join('　') + '</div></div></label>';
+  }).join('');
+  $('impPrev').querySelectorAll('[data-p]').forEach(c => c.onchange = () => { IMP.pick[c.dataset.p] = c.checked; renderPicks(); });
+}
+async function doGeocode() {
+  $('imp2').classList.add('hide'); $('imp3').classList.remove('hide'); $('geoOkBox').classList.add('hide'); $('geoProb').innerHTML = '';
+  IMP.groups = IMP.groups.filter((s, i) => isPicked(i));   // 只查勾選的
+  const gs = IMP.groups;
+  IMP.results = {}; IMP.skip = {};
+  for (let i = 0; i < gs.length; i += 20) {
+    $('geoMsg').textContent = '正在查地址… ' + i + ' / ' + gs.length;
+    $('geoBar').style.width = Math.round(i / gs.length * 100) + '%';
+    let res;
+    try { res = await call('geocode', { addrs: gs.slice(i, i + 20).map(s => s.addr) }, false); } catch (e) { $('geoMsg').textContent = '查地址中斷了，請重新匯入'; return; }
+    res.forEach((r, k) => { IMP.results[i + k] = r; });
+  }
+  $('geoBar').style.width = '100%';
+  renderGeo();
+}
+function renderGeo() {
+  const gs = IMP.groups, R = IMP.results;
+  const bad = gs.map((s, i) => i).filter(i => !R[i].ok), rough = gs.map((s, i) => i).filter(i => R[i].ok && R[i].geo === '約略');
+  const skip = IMP.skip || (IMP.skip = {});
+  const n = gs.length - Object.keys(skip).length;
+  $('geoMsg').textContent = '查好了：' + gs.length + ' 家，' + (gs.length - bad.length) + ' 家找到位置' + (bad.length ? '，' + bad.length + ' 家找不到' : '');
+  const item = (i, kind) => '<div class="card" style="' + (skip[i] ? 'opacity:.45' : '') + '"><div><b>' + esc(gs[i].client) + '</b> ' + (kind === 'bad' ? '<span class="badge fail">找不到</span>' : '<span class="badge warn">約略：' + esc(R[i].found) + '</span>') + '</div>' +
+    '<div class="row" style="margin-top:6px"><input class="in grow" data-fix="' + i + '" value="' + esc(gs[i].addr) + '"><button class="btn small" data-re="' + i + '">重查</button></div>' +
+    '<label class="opt" style="padding-bottom:0"><input type="checkbox" data-skip="' + i + '"' + (skip[i] ? ' checked' : '') + '><span>這家不要加入</span></label></div>';
+  $('geoProb').innerHTML = (bad.length ? '<h3 style="margin:14px 4px 6px">找不到位置（請改地址後按重查，或不要加入）</h3>' + bad.map(i => item(i, 'bad')).join('') : '') +
+    (rough.length ? '<h3 style="margin:14px 4px 6px">只找到大概位置（可以不改）</h3>' + rough.map(i => item(i, 'rough')).join('') : '');
+  $('geoProb').querySelectorAll('[data-re]').forEach(b => b.onclick = async () => {
+    const i = +b.dataset.re, a = $('geoProb').querySelector('[data-fix="' + i + '"]').value.trim();
+    const r = (await call('geocode', { addrs: [a] }, '重查…'))[0];
+    gs[i].addr = a; R[i] = r;
+    toast(r.ok ? '找到了' + (r.geo === '約略' ? '（大概位置）' : '') : '還是找不到');
+    renderGeo();
+  });
+  $('geoProb').querySelectorAll('[data-skip]').forEach(c => c.onchange = () => { if (c.checked) skip[c.dataset.skip] = 1; else delete skip[c.dataset.skip]; renderGeo(); });
+  const noLoc = bad.filter(i => !skip[i]).length;
+  $('geoOkBox').classList.remove('hide');
+  $('impAdd').textContent = '加入行程（' + n + ' 家' + (noLoc ? '，其中 ' + noLoc + ' 家沒有位置' : '') + '）';
+  $('impAdd').disabled = !n;
+}
+function finishImport() {
+  const R = IMP.results, skip = IMP.skip || {};
+  const stops = IMP.groups.map((s, i) => skip[i] ? null : Object.assign({}, s, { raw: undefined, county: undefined, parcel: undefined, rows: undefined, lat: R[i].ok ? R[i].lat : '', lng: R[i].ok ? R[i].lng : '', geo: R[i].ok ? R[i].geo : '找不到' })).filter(Boolean);
+  call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
+    IMP.skip = null;
+    setTrip(r); ST.tab = 'list';
+    goBack();   // 回到行程
+    toast('已加入 ' + stops.length + ' 家，可以到「路線規劃」排路線了', 3500);
+  });
+}
+
+boot();
 </script>
 </body>
 </html>

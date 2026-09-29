@@ -1,20 +1,19 @@
-# 送貨助手 App 外殼
+# 送貨助手：司機手機用的網頁
 
-手機「加入主畫面」用的外殼網頁，放在公開的 GitHub repo `pto2tsai/delivery-app`，用 GitHub Pages 發布：
+放在公開的 GitHub repo `pto2tsai/delivery-app`，用 GitHub Pages 發布：`https://pto2tsai.github.io/delivery-app/`
 
-- 網址：`https://pto2tsai.github.io/delivery-app/`
-- 內容只有：入口頁（`index.html`）、App 名稱與圖示（`manifest.webmanifest`、`icon-*.png`、`apple-touch-icon.png`、`splash.png`）
-- **沒有任何程式邏輯、資料或密碼**，打開後把 Apps Script 的送貨助手包在裡面
-- 跟「生產作業管理」（wens-app）分開：司機只看得到送貨助手
+- `index.html`：**整個送貨助手的畫面**（不是外殼、不用框），由 `npm run build:web` 從 `src/App.html` 產生，不要直接改
+- 資料都在 Google 試算表：網頁用 fetch 呼叫 Apps Script 的 `doPost`（網址在 `docs/WEB_APP_URL.txt`），密碼一樣檢查 `APP_PIN`
+- `manifest.webmanifest`、`icon-*.png`、`apple-touch-icon.png`：手機主畫面的名稱和圖示（貨車＋定位點＋海浪）
+- 網頁本身沒有資料、沒有密碼，公開沒關係
 
-原始檔放在 `delivery-helper` repo 的 `app-shell/`，改完複製到 `delivery-app` repo。
+## 為什麼不用框包 Apps Script（2026-09-30 改）
 
-## 要改的地方
+用框包起來時：iPhone 從主畫面打開會算錯高度（底部露出一條）、語音和定位常被 Google 的框擋掉、瀏覽器打開上面有 Google 的提示條。
+直接放網頁就跟貨櫃系統、崇文海鮮 ERP 一樣，沒有這些問題。
 
-- `index.html` 的 `APP_URL`：Apps Script 部署網址（結尾 `/exec`，見 `docs/WEB_APP_URL.txt`）
-- 圖示：由蔡阿博提供的 logo（貨車＋定位點＋海浪）裁切產生，圓角外面塗白
+## 改版
 
-## 限制
-
-- 定位（從目前位置出發、記下這家的位置）、語音：外殼已經允許，但 Google 的框架不一定放行；不行的話畫面會提示改用拖的、改按鍵盤麥克風
-- 從 App 打開和從瀏覽器打開，手機裡記的東西（密碼、勾選的縣市）是分開的；請固定用同一種方式打開
+1. 改 `src/App.html`，跑 `npm run build:web`（`npm test` 會檢查有沒有跑）
+2. 推 `delivery-helper` 的 `main` → Apps Script 自動部署（後端）
+3. **部署成功後**，把 `app-shell/` 的檔案複製到 `delivery-app` repo 推上去（前端）。順序不能反：前端要呼叫的新功能，後端要先有
