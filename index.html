@@ -701,8 +701,9 @@ function boot() {
     if (!r.pinOk) { lsSet('dh_snap', null); ST.trips = null; showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
     ST.home = r.home; ST.today = r.today;
     ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
-    ST.trips = r.trips;
+    if (r.trips) ST.trips = r.trips;
     if (!snap) navReplace({ v: 'home' });
+    if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
     if (!snap || ST.view === 'home') loadHome(true);
     prefetchTrips(); saveSnap();
   }, e => {
