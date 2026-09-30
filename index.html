@@ -147,6 +147,13 @@
   .dr-btns{display:grid;grid-template-columns:52px 1fr 1fr 1fr;gap:8px;margin-top:10px}
   .dr-btns .btn{padding:15px 4px;font-size:17px;text-align:center;text-decoration:none}
   .dr-i{border:1.5px solid #d5dde2;background:#fff;border-radius:12px;font-size:20px;color:#50606b}
+  .st-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+  .st-r .more{margin-top:0}
+  #stFilter{flex-wrap:nowrap;gap:6px}
+  #stFilter .chip{padding:6px 10px;font-size:15px;white-space:nowrap}
+  .tipline{display:flex;align-items:center;gap:8px;border-radius:10px;padding:6px 8px 6px 12px;margin-top:8px;font-size:15.5px;font-weight:700}
+  .tipline.warn{background:#fff8e1;color:#8a5a00}.tipline.fail{background:#fde4e2;color:#b3261e}
+  .tipq{flex:none;width:32px;height:32px;border-radius:50%;border:1.5px solid currentColor;background:#fff;color:inherit;font-weight:800;font-size:16px}
   .dr-just{display:flex;align-items:center;gap:10px;background:#e9f7ef;border:1px solid #bfe6cf;border-radius:12px;padding:8px 8px 8px 14px;margin-bottom:10px;font-size:15.5px;color:#2d6a4a;animation:drIn .25s ease}
   .dr-just.skip{background:#fff8e1;border-color:#f5d77a;color:#8a5a00}
   .dr-just button{flex:none;border:1px solid currentColor;background:#fff;color:inherit;border-radius:8px;padding:6px 14px;font-weight:700;font-size:15px}
@@ -156,7 +163,7 @@
   .big2 .btn{padding:18px 8px;font-size:19px}
   .reasons{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .sug{display:block;width:100%;text-align:left;border:0;background:#f4f7f8;border-radius:12px;padding:10px 12px;margin-top:6px;font-size:16px}
-  .stop>.grow,.cl>.grow{flex:1;min-width:0}
+  .stop>.grow,.cl>.grow,.adm>.grow{flex:1;min-width:0}
   .handle{flex:none;margin-left:auto;touch-action:none;user-select:none;-webkit-user-select:none;cursor:grab;font-size:26px;line-height:1;color:#7a8791;
     width:48px;height:48px;display:flex;align-items:center;justify-content:center;border-radius:12px;align-self:center;background:#f3f6f7}
   .drag-row{user-select:none;-webkit-user-select:none;background:#fff}
@@ -275,19 +282,10 @@
 
   <div id="pList">
     <div class="card" style="padding:4px 14px">
-      <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><b>起點</b>　<span id="startTxt"></span>　<span class="tw" id="departTxt"></span></span><span class="mut">›</span></button>
-      <button class="se" onclick="openEnds()"><span class="dot" style="background:var(--red)"></span><span class="grow"><b>終點</b>　<span id="endTxt"></span></span><span class="mut">›</span></button>
+      <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
     </div>
-    <div class="row" style="margin-bottom:12px">
-      <button class="btn sec grow" onclick="go({ v: 'import', id: ST.trip.id })">📄 匯入 Excel</button>
-      <button class="btn sec grow" onclick="openAdd()">🎤 新增地址</button>
-    </div>
-    <div id="poolHint" class="warnbox hide" style="background:#fff1d6">📥 這是<b>待分配</b>的訂單。司機到<b>自己的行程</b>按「📥 從待分配挑」，挑走的會從這裡搬過去，別人就看不到了。</div>
-    <button class="btn sec" id="pickPoolBtn" style="margin:-2px 0 10px" onclick="pickFromPool()">📥 從待分配挑（辦公室匯入的訂單）</button>
-    <div class="row" id="routeBtns" style="margin:-2px 0 12px">
-      <button class="btn sec grow" onclick="pickFromRoute()">📋 從常用客戶挑</button>
-      <button class="btn sec grow" onclick="openVoiceBatch()">🎤 念紙本訂單</button>
-    </div>
+    <div id="poolHint" class="warnbox hide" style="background:#fff1d6">📥 這是<b>待分配</b>的訂單。司機到<b>自己的行程</b>按「＋ 加客戶」→「辦公室匯入的訂單」，挑走的會從這裡搬過去，別人就看不到了。</div>
+    <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()">＋ 加客戶</button>
     <div class="card">
       <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b></div>
       <div id="listWarn"></div>
@@ -316,7 +314,7 @@
         <div class="mut" style="margin-top:8px" id="sumLine"></div>
         <div id="estWarn"></div>
         <div class="row" style="margin-top:12px">
-          <button class="btn grow" onclick="go({ v: 'drive', id: ST.trip.id })">▶ 開始送貨</button>
+          <button class="btn grow" onclick="go({ v: 'drive', id: ST.trip.id })">▶ 開始導航</button>
           <button class="btn sec" style="width:auto" onclick="go({ v: 'map', id: ST.trip.id })">🗺 地圖</button>
         </div>
         <div id="navBatchBox"></div>
@@ -382,7 +380,6 @@
 
 <div id="sheetHost"></div>
 <datalist id="dlDrivers"></datalist><datalist id="dlPlates"></datalist>
-<button class="fab hide" id="fab" onclick="openAdd()">＋</button>
 <div id="busy" class="hide"><div class="spin"></div><div id="busyMsg">處理中…</div><button id="busyX" class="btn sec small hide" onclick="cancelBusy()">網路很慢？按這裡不等了</button></div>
 <div id="toast" class="hide"></div>
 
@@ -491,7 +488,6 @@ function show(view) {
   ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vAdmin', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
   $('hBack').classList.remove('hide');
   $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
-  $('fab').classList.toggle('hide', !(view === 'trip' && ST.tab === 'list'));
   $('tabbar').classList.toggle('hide', view === 'pin' || view === 'pinedit');
   markTab(view);
   if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
@@ -566,7 +562,7 @@ function route(st) {
 function tabGo(t) {
   if (ROOTS.indexOf(t) >= 0) { go({ v: t }); return; }
   const open = trip => {
-    if (t === 'drive' && !trip.planned) { ST.tab = 'route'; go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「開始送貨」', 3000); return; }
+    if (t === 'drive' && !trip.planned) { ST.tab = 'route'; go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「開始導航」', 3000); return; }
     go({ v: t, id: trip.id });
   };
   if (ST.trip && !(t === 'drive' && ST.trip.name === '待分配')) {
@@ -641,8 +637,8 @@ function nextBatch(first) {
 function batchBtn(first) {
   const b = nextBatch(first), n = Math.min(b.length, NAV_MAX);
   if (n < 2) return '';
-  return '<a class="btn sec" id="navBatch" style="display:block;text-align:center;text-decoration:none;margin-top:10px" target="_blank" href="' + batchUrl(b) + '">🗺 接下來 ' + n + ' 站一起導航</a>' +
-    '<div class="mut" style="text-align:center;margin-top:4px">Google 地圖一次最多 10 站，送完這批再按一次帶下一批</div>';
+  return '<div class="row" style="margin-top:10px"><a class="btn sec grow" id="navBatch" style="text-align:center;text-decoration:none" target="_blank" href="' + batchUrl(b) + '">🗺 接下來 ' + n + ' 站一起導航</a>' +
+    '<button class="tipq" style="width:40px;height:40px;color:var(--mut)" onclick="tipHelp(\'batch\')" aria-label="說明">？</button></div>';
 }
 
 /* ================= 開場、密碼 ================= */
@@ -684,7 +680,7 @@ function renderTrips() {
   const all = (ST.trips || []).filter(t => !t.pool), t0 = ST.homeTab || 'todo';
   // 待分配：還有沒人挑的，放最上面提醒
   $('poolBox').innerHTML = pools.map(t => '<button class="trip" style="border:2px solid #f5b544;margin-top:10px" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">📥 待分配 ' + esc(t.date.slice(5).replace('-', '/')) + '</b><span class="badge warn">還有 ' + (t.total - t.done - t.fail) + ' 家沒人挑</span></div>' +
-    '<div class="mut" style="margin-top:4px">司機到自己的行程按「📥 從待分配挑」</div></button>').join('');
+    '<div class="mut" style="margin-top:4px">司機到自己的行程按「＋ 加客戶」→「辦公室匯入的訂單」</div></button>').join('');
   const isDone = t => t.total > 0 && t.done + t.fail === t.total;
   const list = all.filter(t => (t0 === 'done') === isDone(t));
   $('hmTodo').classList.toggle('on', t0 === 'todo'); $('hmDone').classList.toggle('on', t0 === 'done');
@@ -865,11 +861,16 @@ function tab(t) {
   $('tbRoute').classList.toggle('on', t === 'route');
   $('pList').classList.toggle('hide', t !== 'list');
   $('pRoute').classList.toggle('hide', t !== 'route');
-  $('fab').classList.toggle('hide', !(ST.view === 'trip' && t === 'list'));
   render();
 }
+const TIPS = {
+  batch: ['一起導航', '把接下來的客戶一次放進 Google 地圖，照順序一站一站開。<br><br>Google 地圖一次最多 <b>10 站</b>，送完這一批再按一次，會帶下一批。'],
+  noloc: ['找不到位置', 'Google 查不到這個地址，所以<b>不會排進路線</b>。<br><br>按那一家紅色的「📍 放位置」把它放到地圖上，或按 ••• 改地址。'],
+  rough: ['位置不準', 'Google 只找到村、路或附近，不知道是哪一棟。<br><br>按那一家黃色的「📍 修正」，在地圖上拖到正確的地方；或到了以後按「📍 到了按這裡記下」。<b>下次就會記住</b>。']
+};
+function tipHelp(k) { const t = TIPS[k]; sheet('<h2>' + t[0] + '</h2><div style="font-size:17px;line-height:1.7">' + t[1] + '</div><p><button class="btn" id="tipOk">知道了</button></p>', (el, close) => { el.querySelector('#tipOk').onclick = close; }); }
 function refresh(r) { setTrip(r); render(); if (ST.view === 'drive') renderDrive(); }
-function endLabel(t) { return t.endMode === '最後一家' ? '送完最後一家就結束' : t.endMode === '指定地址' ? (t.end || '（未設定）') : '回到起點'; }
+function endLabel(t) { return t.endMode === '最後一家' ? '送完就結束' : t.endMode === '指定地址' ? (t.end || '（未設定）') : '回到起點'; }
 
 function render() {
   const t = ST.trip, ss = ST.stops;
@@ -877,17 +878,16 @@ function render() {
   $('hTitle').textContent = tripTitle(t);
   const isPool = t.name === '待分配';
   $('poolHint').classList.toggle('hide', !isPool);
-  $('pickPoolBtn').classList.toggle('hide', isPool);
-  $('routeBtns').classList.toggle('hide', isPool);
   $('tbRoute').classList.toggle('hide', isPool);
-  $('startTxt').textContent = t.start || '（未設定，會用目前位置）';
+  $('startTxt').textContent = t.start ? (ST.home && t.start === ST.home.addr ? '公司' : t.start) : '目前位置';   // 起點、終點一行就好
   $('departTxt').textContent = t.depart + ' 出發';
   $('endTxt').textContent = endLabel(t);
   $('cntBadge').textContent = ss.length;
   const noLoc = ss.filter(s => s.lat === '');
   const rough = ss.filter(s => s.geo === '約略');
-  $('listWarn').innerHTML = (noLoc.length ? '<div class="warnbox">⚠ ' + noLoc.length + ' 家找不到位置，不會排進路線。按紅色的「找不到位置」把它放到地圖上，或按 ••• 改地址。</div>' : '') +
-    (rough.length ? '<div class="warnbox">有 ' + rough.length + ' 家「位置不準」（Google 只找到村、路或附近，不知道是哪一棟）。按黃色的「位置不準」在地圖上拖到正確的地方，下次就會記住。</div>' : '');
+  // 一行就好，要看說明按「？」（不佔版面）
+  const tip = (cls, txt, help) => '<div class="tipline ' + cls + '"><span class="grow">' + txt + '</span><button class="tipq" onclick="tipHelp(\'' + help + '\')" aria-label="說明">？</button></div>';
+  $('listWarn').innerHTML = (noLoc.length ? tip('fail', '⚠ ' + noLoc.length + ' 家找不到位置', 'noloc') : '') + (rough.length ? tip('warn', '⚠ ' + rough.length + ' 家位置不準', 'rough') : '');
   // 篩選：全部／待送／已送達／沒送成
   const F = [['all', '全部', ss.length], ['待送', '待送', ss.filter(s => s.status === '待送').length], ['已送達', '已送達', ss.filter(s => s.status === '已送達').length], ['沒送成', '沒送成', ss.filter(s => s.status === '沒送成').length]];
   if (!ST.filter || !F.some(f => f[0] === ST.filter)) ST.filter = 'all';
@@ -918,17 +918,20 @@ function stopRow(s, route) {
   const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
   // 品項明細不列（太佔高度，按 ••• 或送貨畫面看得到）；件數和公里放同一行
   const sub = [];
+  const tw = twTag(s, route);
+  if (tw) sub.push(tw);   // 指定時段、預計幾點到也放同一行
   if (route && s.legKm !== '') sub.push(s.legKm + ' km · ' + fmtMin(s.legMin));
   if (s.qty !== '') sub.push('<b>' + s.qty + ' 件</b>');
   const leg = '';
-  const warn = s.lat === '' ? ' <button class="badge fail" onclick="editPin(\'' + s.id + '\')">找不到位置 › 放到地圖上</button>' :
-    s.geo === '約略' ? ' <button class="badge warn" onclick="editPin(\'' + s.id + '\')">位置不準 › 修正</button>' : '';
-  const tw = twTag(s, route);
+  // 位置有問題：短短一個鈕，跟件數放同一行（不多佔一行）
+  const warn = s.lat === '' ? '<button class="badge fail fixpin" onclick="editPin(\'' + s.id + '\')">📍 放位置</button>' :
+    s.geo === '約略' ? '<button class="badge warn fixpin" onclick="editPin(\'' + s.id + '\')">📍 修正</button>' : '';
+  if (warn) sub.push(warn);
   return '<div class="stop">' + (route ? '<span class="num ' + cls + '">' + s.seq + '</span>' : '') +
-    '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + warn + '</div>' +
-    (tw ? '<div class="sub">' + tw + '</div>' : '') + (sub.length ? '<div class="sub">' + sub.join('　') + '</div>' : '') + leg +
+    '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + '</div>' +
+    (sub.length ? '<div class="sub">' + sub.join('　') + '</div>' : '') + leg +
     (s.status === '沒送成' && s.reason ? '<div class="sub" style="color:var(--red)">原因：' + esc(s.reason) + '</div>' : '') + '</div>' +
-    '<div style="text-align:right">' + badgeOf(s) + (doneHm(s) ? '<div class="sub" style="margin-top:2px">' + doneHm(s) + '</div>' : '') + '<br><button class="more" onclick="stopMenu(\'' + s.id + '\')">•••</button></div></div>';
+    '<div class="st-r">' + (doneHm(s) ? badgeOf(s).replace('</span>', ' ' + doneHm(s) + '</span>') : badgeOf(s)) + '<button class="more" onclick="stopMenu(\'' + s.id + '\')">•••</button></div></div>';   // 狀態和時間同一行，••• 緊接在下面
 }
 
 function renderRoute() {
@@ -1075,7 +1078,7 @@ function stopMenu(id) {
     (s.phone ? '<a class="btn sec" style="text-align:center;text-decoration:none" href="tel:' + telOf(s.phone) + '">📞 打電話 ' + esc(s.phone) + '</a>' : '') +
     (s.status !== '已送達' ? '<button class="btn sec" data-a="done">✓ 標記已送達</button>' : '') +
     (s.status !== '沒送成' ? '<button class="btn sec" data-a="fail">✗ 標記沒送成</button>' : '') +
-    (s.status !== '待送' ? '<button class="btn sec" data-a="todo">↺ 改回待送</button>' : '') +
+    (s.status !== '待送' ? '<button class="btn sec" data-a="todo">↩ 改回待送</button>' : '') +
     (s.status === '待送' && ST.trip.name !== '待分配' ? '<button class="btn sec" data-a="pool">↩ 退回待分配（讓別的司機挑）</button>' : '') +
     '<button class="btn sec" data-a="pin">📍 在地圖上修正位置</button><button class="btn sec" data-a="edit">✎ 修改（含指定時段）</button><button class="btn sec" data-a="del" style="color:var(--red)">刪除這一家</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
@@ -1163,60 +1166,32 @@ function carryOver() {
   call('carryOver', { id: ST.trip.id }, '複製中…').then(r => { setTrip(r); ST.tab = 'list'; toast('已移到「' + r.trip.date.slice(5).replace('-', '/') + ' ' + tripTitle(r.trip) + '」'); go({ v: 'trip', id: r.trip.id }); });
 }
 
-/* ================= 新增地址（語音、打字、以前的客戶） ================= */
-/** 新增地址（插單）：打開就點好框框，按鍵盤的 🎤 念 */
-function openAdd() {
-  sheet('<h2>新增送貨地址</h2>' +
-    '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px">🎤 按<b>鍵盤上的麥克風</b>念地址或客戶名稱，念完按「查地址」</div>' +
-    '<input id="adA" class="in" placeholder="地址、客戶名稱" autocomplete="off" enterkeyhint="search"><div id="adSug"></div>' +
-    '<label class="f">客戶</label><input id="adC" class="in" placeholder="可以不填">' +
-    '<label class="f">備註</label><input id="adN" class="in" placeholder="可以不填">' +
-    '<div id="adRes"></div><p><button class="btn" id="adGo">查地址</button></p>' +
-    (ST.trip.planned ? '<div class="mut">路線已經規劃過：新加的地址會自動插在最順路的位置。</div>' : ''), (el, close) => {
-    let picked = null, timer;
-    const inA = $('adA'), go = el.querySelector('#adGo');
-    const reset = () => { picked = null; $('adRes').innerHTML = ''; go.textContent = '查地址'; };
-    inA.oninput = () => {
-      reset();
-      clearTimeout(timer);
-      const q = inA.value.trim();
-      if (q.length < 2) { $('adSug').innerHTML = ''; return; }
-      timer = setTimeout(() => call('findClients', { q }, false).then(list => {
-        if (!$('adSug') || inA.value.trim() !== q) return;   // 視窗已經關了、或字已經改了
-        $('adSug').innerHTML = list.length ? '<div class="mut" style="margin-top:6px">以前送過：</div>' + list.map((c, i) => '<button class="sug" data-i="' + i + '"><b>' + esc(c.client || '（沒有名稱）') + '</b><br>' + esc(c.addr) + '</button>').join('') : '';
-        $('adSug').querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
-          const c = list[+b.dataset.i];
-          inA.value = c.addr; $('adC').value = c.client; $('adSug').innerHTML = '';
-          picked = Object.assign({}, c, { ok: true });
-          $('adRes').innerHTML = '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf">✓ ' + esc(c.addr) + '</div>';
-          go.textContent = '✓ 加入';
-        });
-      }), 350);
-    };
-    inA.onkeydown = e => { if (e.key === 'Enter') go.click(); };
-    go.onclick = async () => {
-      if (!picked) inA.value = spokenAddr(inA.value.trim());   // 念的「一百三十六號」→ 136號
-      const a = inA.value.trim();
-      if (!a) { inA.focus(); return; }
-      if (!picked) {
-        const g = (await call('geocode', { addrs: [a] }, '查地址…'))[0];
-        if (!g.ok) { $('adRes').innerHTML = '<div class="warnbox">找不到「' + esc(a) + '」，請檢查縣市、路名、門牌號碼。</div>'; return; }
-        picked = g;
-        $('adRes').innerHTML = '<div class="warnbox" style="' + (g.geo === '精確' ? 'background:var(--gl);border-color:#9fd9bf' : '') + '">' + (g.geo === '精確' ? '✓ 找到：' : '⚠ 只找到大概位置：') + esc(g.found) + '<br><a target="_blank" href="https://www.google.com/maps/search/?api=1&query=' + g.lat + ',' + g.lng + '">在地圖上看</a></div>';
-        go.textContent = '✓ 加入';
-        return;
-      }
-      const stop = { addr: a, client: $('adC').value, note: $('adN').value, lat: picked.lat, lng: picked.lng, geo: picked.geo, phone: picked.phone || '' };
-      call('addStops', { trip: ST.trip.id, stops: [stop] }, '加入中…').then(r => {
-        close(); refresh(r);
-        if (ST.view === 'drive') renderDrive();
-        if (ST.trip.planned) call('planRoute', { trip: ST.trip.id, mode: 'manual' }, '更新距離…').then(x => { refresh(x); if (ST.view === 'drive') renderDrive(); });
-        toast(ST.trip.planned ? '已加入，插在最順路的位置' : '已加入');
-      });
-    };
-    inA.focus();   // 按下去的那一刻就點好框框，鍵盤跳出來直接按麥克風念
+/* ================= 加客戶（一個按鈕，四種方法） ================= */
+/**
+ * 「＋ 加客戶」：以前分散在五個按鈕（常用客戶、待分配、新增地址、念紙本訂單、匯入 Excel），
+ * 現在都從這裡進去，照最常用的排
+ */
+function addMenu() {
+  const isPool = ST.trip.name === '待分配';
+  const pool = (ST.trips || []).filter(t => t.pool).reduce((n, t) => n + Math.max(0, t.total - t.done - t.fail), 0);
+  const item = (k, ico, title, sub) => '<button class="adm" data-add="' + k + '"><span class="ico">' + ico + '</span><span class="grow"><b>' + title + '</b><span class="mut">' + sub + '</span></span><span class="mut">›</span></button>';
+  sheet('<h2>加客戶</h2>' +
+    (isPool ? '' : item('route', '📋', '常用客戶', '這條路線常叫的已經先勾好，看著紙本取消沒叫的')) +
+    (isPool ? '' : item('pool', '📥', '辦公室匯入的訂單', '從待分配挑' + (pool ? '（還有 ' + pool + ' 家沒人挑）' : ''))) +
+    item('voice', '🎤', '說或打字', '一家或好幾家都可以，也可以只說客戶名稱') +
+    item('excel', '📄', '匯入 Excel', 'ERP 匯出的訂單檔'), (el, close) => {
+    el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
+      const k = b.dataset.add;
+      close();
+      // 馬上開下一步（鍵盤才會跳出來；返回鍵也會直接回到行程）
+      if (k === 'route') pickFromRoute();
+      else if (k === 'pool') pickFromPool();
+      else if (k === 'voice') openAddStops();
+      else go({ v: 'import', id: ST.trip.id });
+    });
   });
 }
+
 /**
  * 念出來的一句話拆成客戶和地址：「朴子海產嘉義縣朴子市大鄉里651號」→ 客戶「朴子海產」、地址「嘉義縣朴子市…」。
  * 找第一個縣市或常送的鄉鎮當地址開頭；沒有地址的樣子就當客戶名稱（到「以前送過的」找地址）
@@ -1229,12 +1204,15 @@ function parseSpoken(raw) {
   if (/[路街道巷弄號村]/.test(t)) return { client: '', addr: fillCounty(t) };
   return { client: t, addr: '' };
 }
-/** 念紙本訂單：一家念一句，自動查地址，念完自動聽下一家；最後一次加入行程 */
-function openVoiceBatch() {
+/**
+ * 加地址（說或打字）：一家一句「客戶名稱＋地址」，也可以只說客戶名稱（從以前送過的找）；
+ * 打兩個字會跳出以前送過的客戶，點一下就加。一家或好幾家都用這個（以前的「新增地址」「念紙本訂單」合在一起）
+ */
+function openAddStops() {
   const items = [];
-  sheet('<h2>🎤 念紙本訂單</h2><div class="mut">一次念一家：客戶名稱＋地址，例如「朴子海產，嘉義縣朴子市大鄉里651號」。只念客戶名稱，會從以前送過的找地址。</div>' +
-    '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px;line-height:1.7">① 按鍵盤上的 <b>🎤</b> 念一家<br>② 按「<b>加入</b>」（或鍵盤的換行）<br>③ 直接念下一家</div>' +
-    '<div class="row"><input id="vbIn" class="in grow" placeholder="點這裡，按鍵盤上的 🎤 念" autocomplete="off" enterkeyhint="done"><button class="btn small" id="vbAdd">加入</button></div>' +
+  sheet('<h2>🎤 說或打字加地址</h2>' +
+    '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px;line-height:1.7">① 按鍵盤上的 <b>🎤</b> 念一家（客戶名稱＋地址，或只說客戶名稱）<br>② 按「<b>加入</b>」，再念下一家<br>打兩個字會跳出以前送過的客戶，點一下就好</div>' +
+    '<div class="row"><input id="vbIn" class="in grow" placeholder="例如：朴子海產 朴子市大鄉里651號" autocomplete="off" enterkeyhint="done"><button class="btn small" id="vbAdd">加入</button></div><div id="vbSug"></div>' +
     '<div id="vbList" style="margin-top:8px"></div><p><button class="btn" id="vbGo" disabled>加入行程</button></p>', (el, close) => {
     const go = el.querySelector('#vbGo');
     const alive = () => !!document.getElementById('vbList');
@@ -1265,7 +1243,24 @@ function openVoiceBatch() {
       it.busy = false; render();
     };
     const heard = text => { const it = parseSpoken(text); if (!it.client && !it.addr) return; items.push(it); lookup(it); };
-    el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; } $('vbIn').focus(); };   // 鍵盤留著，直接念下一家
+    el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; $('vbSug').innerHTML = ''; } $('vbIn').focus(); };   // 鍵盤留著，直接念下一家
+    // 打兩個字：以前送過的客戶跳出來，點一下直接加（不用再查）
+    let sugT;
+    $('vbIn').oninput = () => {
+      clearTimeout(sugT);
+      const q = $('vbIn').value.trim();
+      if (q.length < 2) { $('vbSug').innerHTML = ''; return; }
+      sugT = setTimeout(() => call('findClients', { q }, false).then(list => {
+        if (!alive() || $('vbIn').value.trim() !== q) return;
+        list = list.slice(0, 5);
+        $('vbSug').innerHTML = list.length ? '<div class="mut" style="margin-top:6px">以前送過：</div>' + list.map((c, i) => '<button class="sug" data-i="' + i + '"><b>' + esc(c.client || '（沒有名稱）') + '</b><br>' + esc(c.addr) + '</button>').join('') : '';
+        $('vbSug').querySelectorAll('[data-i]').forEach(b => b.onclick = () => {
+          const c = list[+b.dataset.i];
+          items.push({ client: c.client, addr: c.addr, phone: c.phone, open: c.open, close: c.close, g: { ok: c.lat !== '', lat: c.lat, lng: c.lng, geo: c.geo } });
+          $('vbIn').value = ''; $('vbSug').innerHTML = ''; render(); $('vbIn').focus();
+        });
+      }, () => {}), 350);
+    };
     $('vbIn').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#vbAdd').click(); };
     go.onclick = () => {
       const miss = items.filter(it => !it.g || !it.g.ok).length;
@@ -1397,7 +1392,7 @@ function renderDrive() {
   drClock();
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
   $('drSum').innerHTML = '<div class="dr-head"><span style="font-size:20px">📦</span><b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
-    '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">預覽路線</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>' +
+    '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">🗺 地圖</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>' +
     '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big grow">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
     '<div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
     cnt('skip', '#f5a623', paused.length, '暫停') + cnt('todo', '#c7d0d6', todo.length, '待送') + '</div></div>' +
@@ -1416,7 +1411,7 @@ function renderDrive() {
     '</span><button onclick="drUndo()">復原</button></div>' : '';
   $('drList').innerHTML = justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
-  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
+  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAddStops()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
 function drCard(s, isCur, open, delay, paused) {
   const st = s.status, eta = st === '待送' ? drEta(s, delay) : '';
@@ -1474,7 +1469,7 @@ function pickFromRoute(name) {
   name = (name || ST.trip.name).replace(/[（(]續[)）]/g, '').trim();
   const sh = ST.trip.shift;
   call('routeClients', { name, trip: ST.trip.id, shift: sh }, '讀取常用客戶…').then(list => {
-    if (!list.length) { toast('「' + name + '」以前還沒送過。先用匯入、新增地址或念訂單加客戶，下次就會出現在這裡', 5000); return; }
+    if (!list.length) { toast('「' + name + '」以前還沒送過。先用「＋ 加客戶」的其他方法加，下次就會出現在這裡', 5000); return; }
     const pick = {}, wk = isWeekName(name), day = wk ? name.slice(2, 3) : '';
     list.forEach((c, i) => { if (c.sug && !c.inTrip) pick[i] = 1; });   // 常叫的先勾好，今天沒叫的取消就好
     const md = d => d ? d.slice(5).replace('-', '/') : '';
@@ -1631,7 +1626,7 @@ function showHelp() {
     '<h3 style="margin:14px 0 4px">出發前</h3>' +
     step(0, '第一次用：「設定」→ 選這支手機是誰開的', '之後司機、車牌都會自動帶') +
     step(1, '下方「行程」→「＋ 新增行程」', '日期、上午／下午、今天的路線都自動帶好，直接按「建立」') +
-    step(2, '勾今天要送的客戶', '常叫的已經先勾好，看著紙本把<b>今天沒叫的取消</b>，按「加入」。辦公室有匯入訂單的話，按「📥 從待分配挑」') +
+    step(2, '勾今天要送的客戶', '常叫的已經先勾好，看著紙本把<b>今天沒叫的取消</b>，按「加入」。辦公室有匯入訂單的話，按「＋ 加客戶」→「辦公室匯入的訂單」') +
     step(3, '「路線規劃」→ 排好路線', '系統自動排最順的順序') +
     step(4, '下方「導航」開始送', '') +
     '<h3 style="margin:18px 0 4px">送每一家都一樣，重複這三步</h3>' +
@@ -1645,7 +1640,7 @@ function showHelp() {
     row('要打電話給客戶', '按卡片上的電話號碼') +
     row('地圖帶錯地方', '按「ⓘ」→「📍 位置不對？」→「我到了，用我現在的位置」（下次就記住）') +
     row('不小心按錯「完成」', '點下面送過的那一家 →「↩ 改回待送」') +
-    row('路上客戶打來加訂', '按最下面「🎤 路上加一家」') +
+    row('路上客戶打來加訂', '按最下面「🎤 路上加一家」（說或打字都可以）') +
     '</table><div class="mut" style="margin-top:12px;line-height:1.6">上面的數字和進度條只是讓您看送到第幾家、還剩多少，不用按。</div>' +
     '<p><button class="btn" id="hpOk">知道了</button></p>', (el, close) => { el.querySelector('#hpOk').onclick = close; });
 }
@@ -1972,7 +1967,7 @@ function pinSave() {
 /** 開始送貨時：司機到了，直接用現在的位置（不換頁） */
 async function pinHereFor(id) {
   const p = await here();
-  if (!p) { alert('抓不到目前位置（手機可能沒有允許 App 使用位置）。可以回到清單按「位置不準 › 修正」用拖的。'); return; }
+  if (!p) { alert('抓不到目前位置（手機可能沒有允許 App 使用位置）。可以回到清單按「📍 修正」用拖的。'); return; }
   call('setPin', { id, lat: p.lat, lng: p.lng }, '記下位置…').then(r => { refresh(r); if (ST.view === 'drive') renderDrive(); afterPin(r); });
 }
 function afterPin(r) {
