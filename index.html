@@ -263,7 +263,7 @@
     </div>
     <div class="row" style="margin-bottom:12px">
       <button class="btn sec grow" onclick="go({ v: 'import', id: ST.trip.id })">📄 匯入 Excel</button>
-      <button class="btn sec grow" onclick="openAdd({ voice: true })">🎤 新增地址</button>
+      <button class="btn sec grow" onclick="openAdd()">🎤 新增地址</button>
     </div>
     <div id="poolHint" class="warnbox hide" style="background:#fff1d6">📥 這是<b>待分配</b>的訂單。司機到<b>自己的行程</b>按「📥 從待分配挑」，挑走的會從這裡搬過去，別人就看不到了。</div>
     <button class="btn sec" id="pickPoolBtn" style="margin:-2px 0 10px" onclick="pickFromPool()">📥 從待分配挑（辦公室匯入的訂單）</button>
@@ -1025,12 +1025,11 @@ function carryOver() {
 }
 
 /* ================= 新增地址（語音、打字、以前的客戶） ================= */
-/** 新增地址（插單）。voice：一打開就開始聽（開車時用），說完自動查 */
-function openAdd(opt) {
-  const voice = opt && opt.voice;
+/** 新增地址（插單）：打開就點好框框，按鍵盤的 🎤 念 */
+function openAdd() {
   sheet('<h2>新增送貨地址</h2>' +
-    '<button class="btn" id="adMic" style="font-size:20px;padding:16px;margin-bottom:10px">🎤 按這裡用說的（地址或客戶名稱）</button>' +
-    '<input id="adA" class="in" placeholder="或打字：地址、客戶名稱" autocomplete="off"><div id="adSug"></div>' +
+    '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px">🎤 按<b>鍵盤上的麥克風</b>念地址或客戶名稱，念完按「查地址」</div>' +
+    '<input id="adA" class="in" placeholder="地址、客戶名稱" autocomplete="off" enterkeyhint="search"><div id="adSug"></div>' +
     '<label class="f">客戶</label><input id="adC" class="in" placeholder="可以不填">' +
     '<label class="f">備註</label><input id="adN" class="in" placeholder="可以不填">' +
     '<div id="adRes"></div><p><button class="btn" id="adGo">查地址</button></p>' +
@@ -1055,13 +1054,9 @@ function openAdd(opt) {
         });
       }), 350);
     };
-    // 說完：像地址就自動查；像客戶名稱就等「以前送過」的清單跳出來
-    const heard = () => { if (/[路街道巷弄號村里鄉鎮市區]/.test(inA.value)) go.click(); };
-    el.querySelector('#adMic').onclick = () => listen(inA, heard);
     inA.onkeydown = e => { if (e.key === 'Enter') go.click(); };
-    if (IOS) el.querySelector('#adMic').textContent = '🎤 點框框，按鍵盤上的麥克風念';
-    if (voice) listen(inA, heard);   // 在按下去的那一刻開始（手機要求）
     go.onclick = async () => {
+      if (!picked) inA.value = spokenAddr(inA.value.trim());   // 念的「一百三十六號」→ 136號
       const a = inA.value.trim();
       if (!a) { inA.focus(); return; }
       if (!picked) {
@@ -1080,7 +1075,7 @@ function openAdd(opt) {
         toast(ST.trip.planned ? '已加入，插在最順路的位置' : '已加入');
       });
     };
-    if (!voice) inA.focus();
+    inA.focus();   // 按下去的那一刻就點好框框，鍵盤跳出來直接按麥克風念
   });
 }
 /**
@@ -1098,13 +1093,11 @@ function parseSpoken(raw) {
 /** 念紙本訂單：一家念一句，自動查地址，念完自動聽下一家；最後一次加入行程 */
 function openVoiceBatch() {
   const items = [];
-  let rec = null, listening = false;
   sheet('<h2>🎤 念紙本訂單</h2><div class="mut">一次念一家：客戶名稱＋地址，例如「朴子海產，嘉義縣朴子市大鄉里651號」。只念客戶名稱，會從以前送過的找地址。</div>' +
-    (srClass() ? '<p><button class="btn" id="vbMic" style="padding:16px;font-size:20px">🎤 開始念</button></p>' :
-      '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px;line-height:1.7">① 按鍵盤上的 <b>🎤</b> 念一家<br>② 按「<b>加入</b>」（或鍵盤的換行）<br>③ 直接念下一家</div>') +
-    '<div class="row"><input id="vbIn" class="in grow" placeholder="' + (srClass() ? '或打字（鍵盤麥克風也可以）' : '點這裡，按鍵盤上的 🎤 念') + '" autocomplete="off" enterkeyhint="done"><button class="btn small" id="vbAdd">加入</button></div>' +
+    '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px;line-height:1.7">① 按鍵盤上的 <b>🎤</b> 念一家<br>② 按「<b>加入</b>」（或鍵盤的換行）<br>③ 直接念下一家</div>' +
+    '<div class="row"><input id="vbIn" class="in grow" placeholder="點這裡，按鍵盤上的 🎤 念" autocomplete="off" enterkeyhint="done"><button class="btn small" id="vbAdd">加入</button></div>' +
     '<div id="vbList" style="margin-top:8px"></div><p><button class="btn" id="vbGo" disabled>加入行程</button></p>', (el, close) => {
-    const mic = el.querySelector('#vbMic') || document.createElement('button'), go = el.querySelector('#vbGo');
+    const go = el.querySelector('#vbGo');
     const alive = () => !!document.getElementById('vbList');
     const render = () => {
       if (!alive()) return;
@@ -1133,32 +1126,9 @@ function openVoiceBatch() {
       it.busy = false; render();
     };
     const heard = text => { const it = parseSpoken(text); if (!it.client && !it.addr) return; items.push(it); lookup(it); };
-    const setMic = () => { mic.textContent = listening ? '🔴 聽著…（按這裡停）' : items.length ? '🎤 說下一家' : '🎤 開始念'; };
-    const hear = () => {
-      const SR = srClass();
-      if (!SR) { $('vbIn').focus(); return; }
-      let got = false;
-      try { rec = new SR(); } catch (e) { return; }
-      rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 1;
-      const me = rec, dog = setTimeout(() => { if (!got) { listening = false; try { me.abort(); } catch (e) {} setMic(); } }, 10000);   // 10 秒沒反應就停
-      rec.onresult = e => { got = true; if (alive()) heard(e.results[0][0].transcript); };
-      rec.onerror = () => { listening = false; };
-      rec.onend = () => {   // 念完一家：有聽到才自動聽下一家；沒聽到就停下來（不會一直重試）
-        clearTimeout(dog);
-        rec = null;
-        if (!alive()) return;
-        if (!got) listening = false;
-        if (listening) setTimeout(() => { if (listening && alive()) { try { hear(); } catch (e) { listening = false; setMic(); } } }, 300);
-        setMic();
-      };
-      try { rec.start(); listening = true; } catch (e) { listening = false; clearTimeout(dog); }
-      setMic();
-    };
-    mic.onclick = () => { if (listening) { listening = false; try { rec && rec.stop(); } catch (e) {} setMic(); } else hear(); };
     el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; } $('vbIn').focus(); };   // 鍵盤留著，直接念下一家
     $('vbIn').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#vbAdd').click(); };
     go.onclick = () => {
-      listening = false; try { rec && rec.stop(); } catch (e) {}
       const miss = items.filter(it => !it.g || !it.g.ok).length;
       if (miss && !confirm(miss + ' 家找不到位置，還是要一起加嗎？（不會排進路線，之後可以在地圖上放位置）')) return;
       const stops = items.map(it => ({ client: it.client, addr: it.addr || it.client, phone: it.phone || '', open: it.open || '', close: it.close || '',
@@ -1170,30 +1140,14 @@ function openVoiceBatch() {
       });
     };
     render();
-    if (srClass()) hear(); else $('vbIn').focus();   // 在按下去的那一刻開始（手機要求）
+    $('vbIn').focus();   // 按下去的那一刻就點好框框（鍵盤才會跳出來）
   });
 }
 /**
- * 語音：
- * - iPhone：網頁內建的語音辨識從主畫面打開時很不穩（常常不回應、畫面像當掉），
- *   改用鍵盤上的 🎤（iPhone 自己的聽寫，很穩）：點好框框、跳出鍵盤，請他按鍵盤的麥克風念
- * - Android：直接聽；一定要按按鈕才開始，10 秒沒反應就放棄，不會卡住
+ * 語音一律用手機鍵盤上的 🎤（iPhone 聽寫、Android Gboard 語音輸入）：
+ * 比網頁的語音辨識準、穩，也會學使用者的說法（蔡阿博 2026-09-30 決定）。
+ * 按 🎤 的按鈕只負責點好框框讓鍵盤跳出來；念的中文數字（一百三十六號）查地址前轉成 136號
  */
-const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-function srClass() { return IOS ? null : window.SpeechRecognition || window.webkitSpeechRecognition || null; }
-function keyboardMic(input, msg) { input.focus(); toast(msg || '請按鍵盤上的 🎤 麥克風念，念完按「查地址」', 5000); }
-function listen(input, done) {
-  const SR = srClass();
-  if (!SR) { keyboardMic(input); return; }
-  let r, got = false;
-  try { r = new SR(); } catch (e) { keyboardMic(input); return; }
-  r.lang = 'zh-TW'; r.interimResults = false; r.maxAlternatives = 1;
-  const dog = setTimeout(() => { if (!got) { try { r.abort(); } catch (e) {} keyboardMic(input, '沒聽到，可以再按一次 🎤，或按鍵盤上的麥克風'); } }, 10000);
-  r.onresult = e => { got = true; clearTimeout(dog); input.value = spokenAddr(e.results[0][0].transcript); input.dispatchEvent(new Event('input')); if (done) done(); };
-  r.onerror = () => { clearTimeout(dog); if (!got) keyboardMic(input, '沒聽到，可以再按一次 🎤，或按鍵盤上的麥克風'); };
-  r.onend = () => clearTimeout(dog);
-  try { r.start(); toast('🎤 請說地址或客戶名稱…', 3500); } catch (e) { clearTimeout(dog); keyboardMic(input); }
-}
 /** 語音常把門牌念成中文數字：二百號 → 200號 */
 function spokenAddr(s) {
   const D = { 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
@@ -1313,7 +1267,7 @@ function renderDrive() {
     '<p><button class="btn sec" onclick="driveEnd(true)">結束，回到行程</button></p></div>' : '';
   $('drList').innerHTML = allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
-  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd({ voice: true })">🎤 說地址插單</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
+  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd()">🎤 說地址插單</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
 function drCard(s, isCur, open, delay, paused) {
   const st = s.status, eta = st === '待送' ? drEta(s, delay) : '';
