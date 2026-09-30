@@ -144,6 +144,7 @@
 <main id="vHome" class="hide">
   <button class="btn" onclick="newTrip()">＋ 新增行程</button>
   <button class="btn sec" style="margin-top:10px" onclick="openPoolImport()">📥 匯入今天的訂單（司機自己挑）</button>
+  <div class="row" style="margin-top:10px"><button class="btn sec grow" onclick="go({ v: 'board' })">📊 今日看板</button><button class="btn sec grow" onclick="go({ v: 'report' })">📈 報表</button></div>
   <div id="poolBox"></div>
   <div id="homeWarn"></div>
   <div class="tabs" style="margin-top:14px"><button id="hmTodo" class="on" onclick="homeTab('todo')">待配送</button><button id="hmDone" onclick="homeTab('done')">已完成</button></div>
@@ -155,6 +156,23 @@
   <div class="row"><input id="clQ" class="in grow" placeholder="🔍 搜尋客戶名稱或地址" autocomplete="off"><button class="btn small" style="font-size:22px" onclick="listen($('clQ'))" title="語音">🎤</button></div>
   <div class="mut" id="clInfo" style="margin:8px 4px"></div>
   <div class="card" id="clList"></div>
+</main>
+
+<!-- 看板（辦公室看每一趟的進度） -->
+<main id="vBoard" class="hide">
+  <div class="row"><input id="bdDate" class="in grow" type="date"><button class="btn small sec" onclick="loadBoard()">↻ 更新</button></div>
+  <div class="mut" id="bdInfo" style="margin:8px 4px"></div>
+  <div id="bdList"></div>
+</main>
+
+<!-- 報表 -->
+<main id="vReport" class="hide">
+  <div class="card">
+    <div class="row"><input id="rpFrom" class="in grow" type="date"><span>到</span><input id="rpTo" class="in grow" type="date"></div>
+    <div class="chips"><button class="chip" onclick="rpRange('week')">這禮拜</button><button class="chip" onclick="rpRange('month')">這個月</button><button class="chip" onclick="rpRange('last')">上個月</button></div>
+    <p style="margin-bottom:0"><button class="btn" onclick="loadReport()">查詢</button></p>
+  </div>
+  <div id="rpOut"></div>
 </main>
 
 <!-- 設定 -->
@@ -328,7 +346,7 @@ function toast(m, ms) { const t = $('toast'); t.textContent = m; t.classList.rem
 const ROOTS = ['home', 'clients', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
 function show(view) {
   ST.view = view;
-  ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
+  ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
   $('hBack').classList.remove('hide');
   $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
   $('fab').classList.toggle('hide', !(view === 'trip' && ST.tab === 'list'));
@@ -337,7 +355,7 @@ function show(view) {
   if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
 }
 function markTab(view) {
-  const t = { home: 'home', trip: 'home', import: 'home', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
+  const t = { home: 'home', trip: 'home', import: 'home', board: 'home', report: 'home', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
   $('tabbar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
 }
 
@@ -379,6 +397,8 @@ function route(st) {
   if (st.v === 'home') loadHome();
   else if (st.v === 'clients') loadClients();
   else if (st.v === 'settings') showSettings();
+  else if (st.v === 'board') showBoard();
+  else if (st.v === 'report') showReport();
   else if (st.v === 'trip') openTrip(st.id, true);
   else if (st.v === 'import') withTrip(st.id, showImport);
   else if (st.v === 'drive') withTrip(st.id, showDrive);
@@ -1215,6 +1235,87 @@ function pickFromRoute(name) {
     });
   });
 }
+/* ================= 看板（辦公室） ================= */
+let boardTimer;
+function showBoard() {
+  $('hTitle').textContent = '📊 今日看板';
+  show('board');
+  if (!$('bdDate').value) $('bdDate').value = ST.today;
+  $('bdDate').onchange = loadBoard;
+  loadBoard();
+  clearInterval(boardTimer);
+  boardTimer = setInterval(() => { if (ST.view === 'board' && !document.hidden) loadBoard(true); else if (ST.view !== 'board') clearInterval(boardTimer); }, 60000);   // 每分鐘自動更新
+}
+function loadBoard(quiet) {
+  call('board', { date: $('bdDate').value }, quiet ? false : '讀取看板…').then(b => {
+    if (ST.view !== 'board') return;
+    const ts = b.trips.filter(t => !t.pool), pool = b.trips.filter(t => t.pool && t.todo);
+    const sum = k => ts.reduce((a, t) => a + t[k], 0);
+    const now = new Date();
+    $('bdInfo').textContent = ts.length + ' 趟　已送達 ' + sum('done') + '　沒送成 ' + sum('fail') + '　待送 ' + sum('todo') + '　（' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ' 更新，每分鐘自動更新）';
+    $('bdList').innerHTML = pool.map(t => '<button class="trip" style="border:2px solid #f5b544" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><b>📥 待分配還有 ' + t.todo + ' 家沒人挑</b></button>').join('') +
+      (ts.length ? ts.map(t => {
+        const pd = t.total ? t.done / t.total * 100 : 0, pf = t.total ? t.fail / t.total * 100 : 0;
+        return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
+          '<span class="mut">' + (t.driver ? '司機 ' + esc(t.driver) : '沒填司機') + '</span></div>' +
+          '<div class="bar" style="display:flex"><i style="width:' + pd + '%"></i><i style="width:' + pf + '%;background:var(--red)"></i></div>' +
+          '<div style="margin-top:6px">✓ ' + t.done + '　<span style="color:var(--red)">✗ ' + t.fail + '</span>　待送 ' + t.todo + '　<span class="mut">共 ' + t.total + ' 家' + (t.km !== '' ? '・' + t.km + ' km' : '') + '</span></div>' +
+          (!t.total ? '<div class="mut">還沒有客戶（' + esc(t.depart) + ' 出發）</div>' : !t.planned && t.todo ? '<div class="mut">還沒規劃路線（' + esc(t.depart) + ' 出發）</div>' : '') +
+          (t.next ? '<div class="mut">下一站：<b style="color:var(--ink)">' + esc(t.next.client || t.next.addr) + '</b>' + (t.next.eta ? '（預計 ' + t.next.eta + '）' : '') + '</div>' : t.total ? '<div class="mut">🎉 送完了</div>' : '') +
+          (t.last ? '<div class="mut">最後一次按送達：' + t.last + '</div>' : '') +
+          (t.late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 可能晚到：' + t.late.map(x => esc(x.client) + '（要 ' + x.close + ' 前，預計 ' + x.eta + '）').join('、') + '</div>' : '') +
+          (t.fails.length ? '<div class="mut" style="color:var(--red)">沒送成：' + t.fails.map(x => esc(x.client) + '（' + esc(x.reason || '未填') + '）').join('、') + '</div>' : '') + '</button>';
+      }).join('') : '<div class="card mut" style="text-align:center">這一天沒有行程</div>');
+  });
+}
+
+/* ================= 報表 ================= */
+let REPORT = null;
+function showReport() {
+  $('hTitle').textContent = '📈 報表';
+  show('report');
+  if (!$('rpFrom').value) rpRange('month', true);
+  loadReport();
+}
+function rpRange(k, noLoad) {
+  const d = new Date(ST.today + 'T00:00:00'), f = x => x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+  let a, b = new Date(d);
+  if (k === 'week') { a = new Date(d); a.setDate(d.getDate() - ((d.getDay() + 6) % 7)); }
+  else if (k === 'last') { a = new Date(d.getFullYear(), d.getMonth() - 1, 1); b = new Date(d.getFullYear(), d.getMonth(), 0); }
+  else a = new Date(d.getFullYear(), d.getMonth(), 1);
+  $('rpFrom').value = f(a); $('rpTo').value = f(b);
+  if (!noLoad) loadReport();
+}
+function loadReport() {
+  call('report', { from: $('rpFrom').value, to: $('rpTo').value }, '計算中…').then(r => {
+    REPORT = r;
+    const t = r.total, pct = x => x == null ? '—' : x + '%';
+    const reasons = o => Object.keys(o).map(k => esc(k) + ' ' + o[k]).join('、');
+    const tbl = (head, rows) => '<div style="overflow-x:auto"><table class="map" style="font-size:15px;white-space:nowrap"><tr>' + head.map(h => '<td><b>' + h + '</b></td>').join('') + '</tr>' +
+      rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</table></div>';
+    $('rpOut').innerHTML = '<div class="card"><b style="font-size:18px">' + esc(r.from) + ' ～ ' + esc(r.to) + '</b>' +
+      '<div class="chips"><span class="chip">' + t.trips + ' 趟</span><span class="chip">送達 ' + t.done + ' 家</span><span class="chip" style="color:var(--red)">沒送成 ' + t.fail + '</span><span class="chip">' + t.km + ' km</span><span class="chip">準時率 ' + pct(t.onTimeRate) + '</span></div>' +
+      (t.fail ? '<div class="mut" style="margin-top:8px">沒送成原因：' + reasons(t.reasons) + '</div>' : '') +
+      '<div class="mut" style="margin-top:4px">準時率＝有指定「幾點以前」的，送達時間沒超過的比例</div></div>' +
+      '<div class="card"><b>每個司機</b>' + tbl(['司機', '趟', '送達', '沒送成', '公里', '準時率'], r.drivers.map(d => [esc(d.driver), d.trips, d.done, d.fail, d.km, pct(d.onTimeRate)])) +
+      r.drivers.filter(d => d.fail).map(d => '<div class="mut">' + esc(d.driver) + ' 沒送成：' + reasons(d.reasons) + '</div>').join('') + '</div>' +
+      '<div class="card"><b>每一天</b>' + tbl(['日期', '趟', '送達', '沒送成', '公里'], r.days.map(d => [esc(d.date.slice(5).replace('-', '/')), d.trips, d.done, d.fail, d.km])) + '</div>' +
+      '<button class="btn sec" onclick="downloadReport()">⬇ 下載 Excel 可以開的檔案（CSV）</button>';
+  });
+}
+function downloadReport() {
+  const r = REPORT, q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
+  const lines = [['期間', r.from + '～' + r.to], [], ['司機', '趟數', '送貨點', '送達', '沒送成', '公里', '準時率(%)', '沒送成原因']]
+    .concat(r.drivers.map(d => [d.driver, d.trips, d.stops, d.done, d.fail, d.km, d.onTimeRate == null ? '' : d.onTimeRate, Object.keys(d.reasons).map(k => k + ' ' + d.reasons[k]).join('、')]))
+    .concat([[], ['日期', '趟數', '送貨點', '送達', '沒送成', '公里', '準時率(%)']])
+    .concat(r.days.map(d => [d.date, d.trips, d.stops, d.done, d.fail, d.km, d.onTimeRate == null ? '' : d.onTimeRate]));
+  const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');   // 開頭加 BOM，Excel 打開中文才不會亂碼
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = '送貨報表_' + r.from + '_' + r.to + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+}
+
 /* ================= 待分配（辦公室一次匯入，司機自己挑） ================= */
 function openPoolImport() {
   call('openPool', { date: ST.today }, '準備中…').then(r => { setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id }); go({ v: 'import', id: r.trip.id }); });
