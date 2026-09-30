@@ -94,6 +94,10 @@
   #tabbar button{flex:1;border:0;background:none;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 0 7px;color:#6b7780;font-size:12.5px;font-weight:600}
   #tabbar svg{width:27px;height:27px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
   #tabbar button.on{color:var(--g)}
+  .adm{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid #e1e6ea;border-radius:14px;padding:14px;margin-bottom:10px;font:inherit;color:inherit}
+  .adm .ico{font-size:30px}
+  .adm b{display:block;font-size:19px}
+  .plate{display:inline-block;border:2px solid #333;border-radius:5px;padding:0 5px;font-weight:800;font-size:14px;letter-spacing:.5px;background:#fff;color:#222;line-height:1.35}
   #tabbar button.on svg{stroke-width:2.4}
   .cl{display:flex;gap:10px;align-items:center;width:100%;text-align:left;border:0;background:none;padding:12px 2px;border-top:1px solid var(--line)}
   .cl:first-child{border-top:0}
@@ -143,8 +147,6 @@
 <!-- 首頁：行程列表 -->
 <main id="vHome" class="hide">
   <button class="btn" onclick="newTrip()">＋ 新增行程</button>
-  <button class="btn sec" style="margin-top:10px" onclick="openPoolImport()">📥 匯入今天的訂單（司機自己挑）</button>
-  <div class="row" style="margin-top:10px"><button class="btn sec grow" onclick="go({ v: 'board' })">📊 今日看板</button><button class="btn sec grow" onclick="go({ v: 'report' })">📈 報表</button></div>
   <div id="poolBox"></div>
   <div id="homeWarn"></div>
   <div class="tabs" style="margin-top:14px"><button id="hmTodo" class="on" onclick="homeTab('todo')">待配送</button><button id="hmDone" onclick="homeTab('done')">已完成</button></div>
@@ -156,6 +158,15 @@
   <div class="row"><input id="clQ" class="in grow" placeholder="🔍 搜尋客戶名稱或地址" autocomplete="off"><button class="btn small" style="font-size:22px" onclick="listen($('clQ'))" title="語音">🎤</button></div>
   <div class="mut" id="clInfo" style="margin:8px 4px"></div>
   <div class="card" id="clList"></div>
+</main>
+
+<!-- 後台（辦公室用：看板、報表、一次匯入訂單、車輛） -->
+<main id="vAdmin" class="hide">
+  <div class="mut" style="margin:0 4px 10px">辦公室用的功能。司機送貨用下面的「行程」「送貨」就好。</div>
+  <button class="adm" onclick="go({ v: 'board' })"><span class="ico">📊</span><span class="grow"><b>今日看板</b><span class="mut">每一趟送到哪裡、下一站、會晚到的、沒送成的</span></span><span class="mut">›</span></button>
+  <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可下載 CSV</span></span><span class="mut">›</span></button>
+  <button class="adm" onclick="openPoolImport()"><span class="ico">📥</span><span class="grow"><b>匯入今天的訂單</b><span class="mut">一次匯入全部，司機自己挑（待分配）</span></span><span class="mut">›</span></button>
+  <div class="card" id="adFleet"></div>
 </main>
 
 <!-- 看板（辦公室看每一趟的進度） -->
@@ -298,10 +309,12 @@
   <button data-t="clients" onclick="tabGo('clients')"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>客戶</button>
   <button data-t="map" onclick="tabGo('map')"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>地圖</button>
   <button data-t="drive" onclick="tabGo('drive')"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8z"/></svg>送貨</button>
+  <button data-t="admin" onclick="tabGo('admin')"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 17V10M11 17V5M16 17v-8M21 17v-4"/></svg>後台</button>
   <button data-t="settings" onclick="tabGo('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
 </nav>
 
 <div id="sheetHost"></div>
+<datalist id="dlDrivers"></datalist><datalist id="dlPlates"></datalist>
 <button class="fab hide" id="fab" onclick="openAdd()">＋</button>
 <div id="busy" class="hide"><div class="spin"></div><div id="busyMsg">處理中…</div></div>
 <div id="toast" class="hide"></div>
@@ -343,10 +356,10 @@ function call(fn, args, msg) {
 function busy(m) { if (m === false) $('busy').classList.add('hide'); else { $('busyMsg').textContent = m; $('busy').classList.remove('hide'); } }
 let toastT;
 function toast(m, ms) { const t = $('toast'); t.textContent = m; t.classList.remove('hide'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hide'), ms || 2600); }
-const ROOTS = ['home', 'clients', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
+const ROOTS = ['home', 'clients', 'admin', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
 function show(view) {
   ST.view = view;
-  ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
+  ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vAdmin', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
   $('hBack').classList.remove('hide');
   $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
   $('fab').classList.toggle('hide', !(view === 'trip' && ST.tab === 'list'));
@@ -355,7 +368,7 @@ function show(view) {
   if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
 }
 function markTab(view) {
-  const t = { home: 'home', trip: 'home', import: 'home', board: 'home', report: 'home', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
+  const t = { home: 'home', trip: 'home', import: 'home', admin: 'admin', board: 'admin', report: 'admin', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
   $('tabbar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
 }
 
@@ -397,6 +410,7 @@ function route(st) {
   if (st.v === 'home') loadHome();
   else if (st.v === 'clients') loadClients();
   else if (st.v === 'settings') showSettings();
+  else if (st.v === 'admin') showAdmin();
   else if (st.v === 'board') showBoard();
   else if (st.v === 'report') showReport();
   else if (st.v === 'trip') openTrip(st.id, true);
@@ -408,7 +422,7 @@ function route(st) {
 }
 /** 導航列：地圖、送貨用「目前這趟」（最後打開的行程；沒有就找最近一趟還沒送完的） */
 function tabGo(t) {
-  if (t === 'home' || t === 'clients' || t === 'settings') { go({ v: t }); return; }
+  if (ROOTS.indexOf(t) >= 0) { go({ v: t }); return; }
   const open = trip => {
     if (t === 'drive' && !trip.planned) { ST.tab = 'route'; go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「開始送貨」', 3000); return; }
     go({ v: t, id: trip.id });
@@ -520,7 +534,7 @@ function renderTrips() {
       const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0;
       return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
-        (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
+        (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
   }
 }
@@ -528,7 +542,8 @@ function newTrip() {
   const d = ST.today || new Date().toISOString().slice(0, 10);
   sheet('<h2>新增行程</h2><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
     '<label class="f">名稱＝路線（例如：雲林、台南線）</label><input id="ntName" class="in" placeholder="取名字，下次才能從常用路線帶客戶">' +
-    '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填">' +
+    '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填" list="dlDrivers" autocomplete="off">' +
+    '<label class="f">車牌</label><input id="ntPlate" class="in" placeholder="例如：ABC-1234（可以不填）" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="ntPlates"></div>' +
     '<label class="f">班次</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
     '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
     '<p><button class="btn" id="ntGo">建立</button></p>', (el, close) => {
@@ -543,6 +558,7 @@ function newTrip() {
     $('ntAM').onclick = () => setShift('上午'); $('ntPM').onclick = () => setShift('下午');
     $('ntDepart').oninput = () => { departTouched = true; };
     setShift(shift);
+    fleetPick($('ntDriver'), $('ntPlate'), $('ntPlates'));
     let known = [];
     call('routes', {}, false).then(rs => {
       known = rs.map(r => r.name);
@@ -554,7 +570,7 @@ function newTrip() {
         $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
       });
     });
-    el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, depart: $('ntDepart').value, shift }, '建立中…')
+    el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, plate: $('ntPlate').value, depart: $('ntDepart').value, shift }, '建立中…')
       .then(r => {
         close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id });
         // 名稱是以前用過的路線（點的或自己打的）：直接跳出常用客戶讓他勾
@@ -911,7 +927,7 @@ function tripMenu() {
   const t = ST.trip;
   const left = ST.stops.filter(s => s.status !== '已送達').length;
   sheet('<h2>' + esc(t.name) + '</h2><div style="display:grid;gap:10px">' +
-    '<button class="btn sec" data-a="rename">✎ 改名稱、日期、上午／下午、司機</button>' +
+    '<button class="btn sec" data-a="rename">✎ 改名稱、日期、上午／下午、司機、車牌</button>' +
     (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家移到' + nextShiftLabel(t) + '</button>' : '') +
     '<button class="btn sec" data-a="del" style="color:var(--red)">刪除這個行程</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
@@ -927,8 +943,10 @@ function renameTrip() {
   const t = ST.trip;
   sheet('<h2>行程資料</h2><label class="f">名稱</label><input id="rnN" class="in" value="' + esc(t.name) + '"><label class="f">日期</label><input id="rnD" class="in" type="date" value="' + esc(t.date) + '">' +
     '<label class="f">班次</label><select id="rnS" class="in"><option' + (t.shift === '上午' ? ' selected' : '') + '>上午</option><option' + (t.shift === '下午' ? ' selected' : '') + '>下午</option></select>' +
-    '<label class="f">司機</label><input id="rnR" class="in" value="' + esc(t.driver) + '"><p><button class="btn" id="rnGo">儲存</button></p>', (el, close) => {
-    el.querySelector('#rnGo').onclick = () => call('updateTrip', { id: t.id, patch: { name: $('rnN').value, date: $('rnD').value, driver: $('rnR').value, shift: $('rnS').value } }, '儲存中…').then(r => { close(); refresh(r); });
+    '<label class="f">司機</label><input id="rnR" class="in" value="' + esc(t.driver) + '" list="dlDrivers" autocomplete="off">' +
+    '<label class="f">車牌</label><input id="rnP" class="in" value="' + esc(t.plate || '') + '" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="rnPlates"></div><p><button class="btn" id="rnGo">儲存</button></p>', (el, close) => {
+    fleetPick($('rnR'), $('rnP'), $('rnPlates'), true);
+    el.querySelector('#rnGo').onclick = () => call('updateTrip', { id: t.id, patch: { name: $('rnN').value, date: $('rnD').value, driver: $('rnR').value, plate: $('rnP').value, shift: $('rnS').value } }, '儲存中…').then(r => { close(); refresh(r); });
   });
 }
 function carryOver() {
@@ -1235,6 +1253,38 @@ function pickFromRoute(name) {
     });
   });
 }
+/* ================= 後台（辦公室） ================= */
+const plateTag = p => '<span class="plate">' + esc(p) + '</span>';
+function showAdmin() {
+  $('hTitle').textContent = '後台';
+  show('admin');
+  $('adFleet').innerHTML = '<b style="font-size:18px">🚚 司機、車牌</b><div class="mut">讀取中…</div>';
+  call('fleet', {}, false).then(f => {
+    FLEET = f;
+    if (ST.view !== 'admin') return;
+    $('adFleet').innerHTML = '<b style="font-size:18px">🚚 司機、車牌</b><div class="mut">新增行程時填過的會記住，下次點一下就好；選司機會自動帶他上次開的車。</div>' +
+      (f.drivers.length ? f.drivers.map(d => '<div class="row" style="padding:8px 0;border-bottom:1px solid #eef1f3"><b class="grow">' + esc(d) + '</b>' + (f.lastPlate[d] ? plateTag(f.lastPlate[d]) : '<span class="mut">沒填車牌</span>') + '</div>').join('') : '<div class="mut" style="margin-top:8px">還沒有。新增行程時填司機、車牌。</div>') +
+      (f.plates.length ? '<div class="mut" style="margin-top:8px">車牌：' + f.plates.map(plateTag).join(' ') + '</div>' : '');
+  });
+}
+/** 司機、車牌：用過的做成下拉選單＋車牌快捷鍵；選了司機自動帶他上次開的車（自己打過車牌就不動） */
+let FLEET = null;
+function fleetPick(drv, plt, box, keep) {
+  let touched = !!(keep && plt.value);
+  plt.addEventListener('input', () => { touched = true; });
+  const auto = () => { const p = FLEET && FLEET.lastPlate[drv.value.trim()]; if (p && !touched) plt.value = p; };
+  drv.addEventListener('input', auto); drv.addEventListener('change', auto);
+  const fill = f => {
+    FLEET = f;
+    const opts = a => a.map(x => '<option value="' + esc(x) + '">').join('');
+    $('dlDrivers').innerHTML = opts(f.drivers); $('dlPlates').innerHTML = opts(f.plates);
+    if (box) box.innerHTML = f.plates.length ? '<div class="chips">' + f.plates.slice(0, 8).map((p, i) => '<button type="button" class="chip" data-p="' + i + '">' + esc(p) + '</button>').join('') + '</div>' : '';
+    if (box) box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { plt.value = f.plates[+b.dataset.p]; touched = true; });
+  };
+  if (FLEET) fill(FLEET);
+  call('fleet', {}, false).then(f => { if (document.body.contains(plt)) fill(f); });
+}
+
 /* ================= 看板（辦公室） ================= */
 let boardTimer;
 function showBoard() {
@@ -1257,7 +1307,7 @@ function loadBoard(quiet) {
       (ts.length ? ts.map(t => {
         const pd = t.total ? t.done / t.total * 100 : 0, pf = t.total ? t.fail / t.total * 100 : 0;
         return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
-          '<span class="mut">' + (t.driver ? '司機 ' + esc(t.driver) : '沒填司機') + '</span></div>' +
+          '<span class="mut">' + (t.driver ? '司機 ' + esc(t.driver) : '沒填司機') + (t.plate ? ' ' + plateTag(t.plate) : '') + '</span></div>' +
           '<div class="bar" style="display:flex"><i style="width:' + pd + '%"></i><i style="width:' + pf + '%;background:var(--red)"></i></div>' +
           '<div style="margin-top:6px">✓ ' + t.done + '　<span style="color:var(--red)">✗ ' + t.fail + '</span>　待送 ' + t.todo + '　<span class="mut">共 ' + t.total + ' 家' + (t.km !== '' ? '・' + t.km + ' km' : '') + '</span></div>' +
           (!t.total ? '<div class="mut">還沒有客戶（' + esc(t.depart) + ' 出發）</div>' : !t.planned && t.todo ? '<div class="mut">還沒規劃路線（' + esc(t.depart) + ' 出發）</div>' : '') +
@@ -1299,6 +1349,7 @@ function loadReport() {
       '<div class="mut" style="margin-top:4px">準時率＝有指定「幾點以前」的，送達時間沒超過的比例</div></div>' +
       '<div class="card"><b>每個司機</b>' + tbl(['司機', '趟', '送達', '沒送成', '公里', '準時率'], r.drivers.map(d => [esc(d.driver), d.trips, d.done, d.fail, d.km, pct(d.onTimeRate)])) +
       r.drivers.filter(d => d.fail).map(d => '<div class="mut">' + esc(d.driver) + ' 沒送成：' + reasons(d.reasons) + '</div>').join('') + '</div>' +
+      '<div class="card"><b>每台車</b>' + tbl(['車牌', '趟', '送達', '沒送成', '公里'], (r.plates || []).map(d => [d.plate.charAt(0) === '（' ? esc(d.plate) : plateTag(d.plate), d.trips, d.done, d.fail, d.km])) + '</div>' +
       '<div class="card"><b>每一天</b>' + tbl(['日期', '趟', '送達', '沒送成', '公里'], r.days.map(d => [esc(d.date.slice(5).replace('-', '/')), d.trips, d.done, d.fail, d.km])) + '</div>' +
       '<button class="btn sec" onclick="downloadReport()">⬇ 下載 Excel 可以開的檔案（CSV）</button>';
   });
@@ -1307,6 +1358,8 @@ function downloadReport() {
   const r = REPORT, q = v => '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"';
   const lines = [['期間', r.from + '～' + r.to], [], ['司機', '趟數', '送貨點', '送達', '沒送成', '公里', '準時率(%)', '沒送成原因']]
     .concat(r.drivers.map(d => [d.driver, d.trips, d.stops, d.done, d.fail, d.km, d.onTimeRate == null ? '' : d.onTimeRate, Object.keys(d.reasons).map(k => k + ' ' + d.reasons[k]).join('、')]))
+    .concat([[], ['車牌', '趟數', '送貨點', '送達', '沒送成', '公里']])
+    .concat((r.plates || []).map(d => [d.plate, d.trips, d.stops, d.done, d.fail, d.km]))
     .concat([[], ['日期', '趟數', '送貨點', '送達', '沒送成', '公里', '準時率(%)']])
     .concat(r.days.map(d => [d.date, d.trips, d.stops, d.done, d.fail, d.km, d.onTimeRate == null ? '' : d.onTimeRate]));
   const csv = '\ufeff' + lines.map(l => l.map(q).join(',')).join('\r\n');   // 開頭加 BOM，Excel 打開中文才不會亂碼
@@ -1323,7 +1376,7 @@ function openPoolImport() {
 /** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
 function pickFromPool() {
   call('poolStops', {}, '讀取待分配…').then(list => {
-    if (!list.length) { toast('待分配裡沒有訂單了（辦公室在首頁按「📥 匯入今天的訂單」）', 4500); return; }
+    if (!list.length) { toast('待分配裡沒有訂單了（辦公室在「後台」按「📥 匯入今天的訂單」）', 4500); return; }
     const pick = {}, today = ST.today;
     sheet('<h2>📥 從待分配挑</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。</div>' +
       '<div class="row" style="margin:10px 0"><input id="plQ" class="in grow" placeholder="🔍 找客戶、地區（例如 朴子）" autocomplete="off"><button class="btn small sec" id="plAll">全選</button><button class="btn small sec" id="plNone">全不選</button></div>' +
