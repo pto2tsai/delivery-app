@@ -209,7 +209,7 @@
 <main id="vAdmin" class="hide">
   <div class="mut" style="margin:0 4px 10px">辦公室用的功能。司機送貨用下面的「行程」「導航」就好。</div>
   <button class="adm" onclick="go({ v: 'board' })"><span class="ico">📊</span><span class="grow"><b>今日看板</b><span class="mut">每一趟送到哪裡、下一站、會晚到的、沒送成的</span></span><span class="mut">›</span></button>
-  <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可下載 CSV</span></span><span class="mut">›</span></button>
+  <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可以下載成 Excel</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="openPoolImport()"><span class="ico">📥</span><span class="grow"><b>匯入今天的訂單</b><span class="mut">一次匯入全部，司機自己挑（待分配）</span></span><span class="mut">›</span></button>
 </main>
 
@@ -264,7 +264,7 @@
   </div>
   <div class="card">
     <b style="font-size:18px">密碼</b>
-    <div class="mut" style="margin-top:6px;line-height:1.6">在 Apps Script「專案設定 → 指令碼屬性」新增 APP_PIN。每支手機第一次打開輸入一次。</div>
+    <div class="mut" style="margin-top:6px;line-height:1.6">密碼由管理系統的人設定，每支手機第一次打開輸入一次就好。<br><span style="font-size:13px">（管理的人：Apps Script「專案設定 → 指令碼屬性」的 APP_PIN）</span></div>
     <p style="margin-bottom:0"><button class="btn sec" onclick="forgetPin()">這支手機重新輸入密碼</button></p>
   </div>
 </main>
@@ -333,13 +333,13 @@
   <div id="imp1">
     <label class="drop"><input id="fileIn" type="file" accept=".xlsx,.xls,.csv,.txt" class="hide" onchange="readFile(this.files[0])">
       <div style="font-size:44px">📄</div><b style="font-size:19px">點這裡選擇 ERP 匯出的檔案</b>
-      <div class="mut" style="margin-top:6px">支援 Excel（xlsx、xls）、CSV</div></label>
+      <div class="mut" style="margin-top:6px">ERP 匯出的 Excel 檔都可以</div></label>
     <p class="mut">同一個地址有好幾張訂單、好幾個品項時，會自動合成一站。</p>
   </div>
   <div id="imp2" class="hide">
     <div class="card">
       <div class="row"><b class="grow" id="impFile"></b><select id="impSheet" class="hide" onchange="pickSheet(this.value)"></select></div>
-      <div class="mut" style="margin:6px 0 4px">請確認每個欄位對到檔案的哪一欄（已自動猜好，猜錯可以改）</div>
+      <div class="mut" style="margin:6px 0 4px">系統已經自動對好每一項資料在檔案的哪一欄，通常不用改；對錯了再改</div>
       <table class="map" id="mapTbl"></table>
     </div>
     <div class="card"><b>這趟要送哪些縣市？</b><div class="mut">預設勾雲林、嘉義、台南（自己的車送）；其他縣市走委外物流，預設不勾。下次會記住你的選擇。</div><div id="impCounties" class="chips"></div></div>
@@ -366,7 +366,7 @@
   <div id="map"></div>
   <div id="pinBar" class="hide">
     <div id="pinWho" style="font-weight:700"></div>
-    <div class="mut" style="margin:2px 0 10px">拖動紅色的點（或直接點地圖）到正確的位置。右上角可以切換「空照圖」看房子。</div>
+    <div class="mut" style="margin:2px 0 10px">拖動紅色的點（或直接點地圖）到正確的位置。右上角可以切換「衛星圖」看房子。</div>
     <div class="row"><button class="btn sec grow" onclick="pinHere()">📍 用我現在的位置</button><button class="btn grow" id="pinSave" onclick="pinSave()">儲存位置</button></div>
   </div>
 </div>
@@ -423,7 +423,7 @@ function rpc(fn, args, pin, rid) {
   return once().catch(e => { if (String(e && e.message) !== 'NET_DOWN') throw e; return new Promise(r => setTimeout(r, 2000)).then(once); })
     .catch(e => {
       const m = String(e && e.message);
-      if (m === 'NET_TIMEOUT') throw new Error('網路太慢，等不到回覆。' + (WRITES[fn] ? '可能已經存了：畫面會重新整理，請看一下再決定要不要重按' : '請確認網路後再試一次'));
+      if (m === 'NET_TIMEOUT') throw new Error('網路太慢，等不到回覆。' + (WRITES[fn] ? '可能已經存了：畫面會自動換成最新的，請看一下再決定要不要重按' : '請確認網路後再試一次'));
       if (m === 'NET_DOWN') throw new Error('連不上系統，請確認網路後再試一次' + (WRITES[fn] ? '（這次沒有存到）' : ''));
       throw e;
     });
@@ -463,7 +463,7 @@ function busyOff() { BUSY_N = Math.max(0, BUSY_N - 1); busyHideIfIdle(); }
 function busy(m) { if (m === false) { BUSY_MANUAL = false; busyHideIfIdle(); } else { BUSY_MANUAL = true; busyShow(m); } }
 function cancelBusy() {
   CANCEL_GEN++; BUSY_N = 0; BUSY_MANUAL = false; busyHideIfIdle();
-  toast('已經不等了。如果剛剛是在存檔，畫面會重新整理，請看一下有沒有存到', 5000);
+  toast('已經不等了。如果剛剛是在存檔，畫面會自動換成最新的，請看一下有沒有存到', 5000);
   quietRefresh();
 }
 /** 在背景把目前這趟換成最新的（辦公室插單、別支手機改過、剛剛沒存成功） */
@@ -713,7 +713,7 @@ function newTrip() {
     '<div class="nt-sum"><div class="grow" id="ntSum"></div><button type="button" id="ntMoreBtn">改</button></div>' +
     '<div id="ntMore" class="hide">' +
       '<label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
-      '<label class="f">班次</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
+      '<label class="f">上午還是下午</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
       '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
       '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填" list="dlDrivers" autocomplete="off">' +
       '<label class="f">車牌</label><input id="ntPlate" class="in" placeholder="例如：ABC-1234" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="ntPlates"></div>' +
@@ -813,7 +813,7 @@ function fetchClients() {
     const rough = list.filter(c => c.geo === '約略' || c.geo === '找不到').length;
     $('clInfo').textContent = (q ? '找到 ' : '共 ') + list.length + ' 家' + (rough ? '，其中 ' + rough + ' 家位置要確認' : '');
     $('clList').innerHTML = list.length ? list.map((c, i) => '<button class="cl" onclick="clientMenu(' + i + ')"><div class="grow"><div class="client" style="font-weight:800;font-size:18.5px">' + esc(c.client || '（沒有名稱）') + '</div>' +
-      '<div class="mut">' + esc(c.addr) + (c.geo === '約略' ? ' <span class="badge warn">約略</span>' : c.geo === '找不到' ? ' <span class="badge fail">找不到位置</span>' : c.geo === '手動' ? ' <span class="badge done">已校正</span>' : '') + '</div>' +
+      '<div class="mut">' + esc(c.addr) + (c.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : c.geo === '找不到' ? ' <span class="badge fail">找不到位置</span>' : c.geo === '手動' ? ' <span class="badge done">已校正</span>' : '') + '</div>' +
       (c.phone || twText(c) ? '<div class="mut">' + [c.phone && '☎ ' + esc(c.phone), twText(c) && twTag(c)].filter(Boolean).join('　') + '</div>' : '') + '</div><span class="mut" style="font-size:22px">›</span></button>').join('')
       : '<div class="mut" style="text-align:center;padding:24px 0">' + (q ? '找不到「' + esc(q) + '」' : '還沒有客戶。匯入過 Excel、送過貨的客戶會自動出現在這裡。') + '</div>';
   });
@@ -887,7 +887,7 @@ function render() {
   const noLoc = ss.filter(s => s.lat === '');
   const rough = ss.filter(s => s.geo === '約略');
   $('listWarn').innerHTML = (noLoc.length ? '<div class="warnbox">⚠ ' + noLoc.length + ' 家找不到位置，不會排進路線。按紅色的「找不到位置」把它放到地圖上，或按 ••• 改地址。</div>' : '') +
-    (rough.length ? '<div class="warnbox">位置「約略」的有 ' + rough.length + ' 家（Google 只找到村、路或區域，不知道是哪一棟）。按黃色的「約略」在地圖上拖到正確位置，下次就會記住。</div>' : '');
+    (rough.length ? '<div class="warnbox">有 ' + rough.length + ' 家「位置不準」（Google 只找到村、路或附近，不知道是哪一棟）。按黃色的「位置不準」在地圖上拖到正確的地方，下次就會記住。</div>' : '');
   // 篩選：全部／待送／已送達／沒送成
   const F = [['all', '全部', ss.length], ['待送', '待送', ss.filter(s => s.status === '待送').length], ['已送達', '已送達', ss.filter(s => s.status === '已送達').length], ['沒送成', '沒送成', ss.filter(s => s.status === '沒送成').length]];
   if (!ST.filter || !F.some(f => f[0] === ST.filter)) ST.filter = 'all';
@@ -908,9 +908,9 @@ function render() {
   $('sumBar').style.width = Math.round((done + fail) / ss.length * 100) + '%';
   $('sumLine').textContent = Math.round((done + fail) / ss.length * 100) + '% 完成 · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + ' · ' + t.depart + ' 出發';
   const late = ss.filter(isLate);
-  $('planInfo').textContent = t.plan + ' ' + t.planned.slice(5, 16);
+  $('planInfo').textContent = ({ 自動最佳化: '系統排的', 自訂順序: '照我排的順序' }[t.plan] || t.plan) + ' ' + t.planned.slice(5, 16);
   $('navBatchBox').innerHTML = batchBtn(null);
-  $('estWarn').innerHTML = (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') + (t.est ? '<div class="warnbox">Google 路線服務這次沒回應，公里數和時間是用直線距離估計的。等一下按「路徑規劃選項」可以再試。</div>' : '');
+  $('estWarn').innerHTML = (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') + (t.est ? '<div class="warnbox">Google 地圖這次沒回應，公里數和時間是大概算的（順序還是可以照著送）。等一下按「路徑規劃選項」再排一次就會準。</div>' : '');
   renderRoute();
 }
 
@@ -922,7 +922,7 @@ function stopRow(s, route) {
   if (s.qty !== '') sub.push('<b>' + s.qty + ' 件</b>');
   const leg = '';
   const warn = s.lat === '' ? ' <button class="badge fail" onclick="editPin(\'' + s.id + '\')">找不到位置 › 放到地圖上</button>' :
-    s.geo === '約略' ? ' <button class="badge warn" onclick="editPin(\'' + s.id + '\')">約略 › 修正</button>' : '';
+    s.geo === '約略' ? ' <button class="badge warn" onclick="editPin(\'' + s.id + '\')">位置不準 › 修正</button>' : '';
   const tw = twTag(s, route);
   return '<div class="stop">' + (route ? '<span class="num ' + cls + '">' + s.seq + '</span>' : '') +
     '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + warn + '</div>' +
@@ -1150,7 +1150,7 @@ function tripMenu() {
 function renameTrip() {
   const t = ST.trip;
   sheet('<h2>行程資料</h2><label class="f">名稱</label><input id="rnN" class="in" value="' + esc(t.name) + '"><label class="f">日期</label><input id="rnD" class="in" type="date" value="' + esc(t.date) + '">' +
-    '<label class="f">班次</label><select id="rnS" class="in"><option' + (t.shift === '上午' ? ' selected' : '') + '>上午</option><option' + (t.shift === '下午' ? ' selected' : '') + '>下午</option></select>' +
+    '<label class="f">上午還是下午</label><select id="rnS" class="in"><option' + (t.shift === '上午' ? ' selected' : '') + '>上午</option><option' + (t.shift === '下午' ? ' selected' : '') + '>下午</option></select>' +
     '<label class="f">司機</label><input id="rnR" class="in" value="' + esc(t.driver) + '" list="dlDrivers" autocomplete="off">' +
     '<label class="f">車牌</label><input id="rnP" class="in" value="' + esc(t.plate || '') + '" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="rnPlates"></div><p><button class="btn" id="rnGo">儲存</button></p>', (el, close) => {
     fleetPick($('rnR'), $('rnP'), $('rnPlates'), true);
@@ -1241,7 +1241,7 @@ function openVoiceBatch() {
     const render = () => {
       if (!alive()) return;
       $('vbList').innerHTML = items.map((it, i) => '<div class="prev row" style="align-items:flex-start"><div class="grow"><b>' + (i + 1) + '. ' + esc(it.client || '（沒有客戶名稱）') + '</b><br>' + esc(it.addr || '—') + '<br>' +
-        (it.busy ? '<span class="badge">查詢中…</span>' : !it.g || !it.g.ok ? '<span class="badge fail">找不到位置</span>' : it.g.geo === '約略' ? '<span class="badge warn">約略</span>' : '<span class="badge done">✓ 找到</span>') + '</div>' +
+        (it.busy ? '<span class="badge">查詢中…</span>' : !it.g || !it.g.ok ? '<span class="badge fail">找不到位置</span>' : it.g.geo === '約略' ? '<span class="badge warn">位置不準</span>' : '<span class="badge done">✓ 找到</span>') + '</div>' +
         '<button class="more" data-e="' + i + '" title="改">✎</button><button class="more" data-d="' + i + '" title="刪">✕</button></div>').join('');
       $('vbList').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { items.splice(+b.dataset.d, 1); render(); });
       $('vbList').querySelectorAll('[data-e]').forEach(b => b.onclick = () => {
@@ -1308,7 +1308,7 @@ function openPlan() {
   const hasStart = !!ST.trip.start;
   const started = ST.stops.some(s => s.status !== '待送');
   sheet('<h2>路徑規劃選項</h2><b>路線規劃方式</b>' +
-    '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統自動最佳化（推薦）</span></label>' +
+    '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統幫我排最順的路（推薦）</span></label>' +
     '<label class="opt"><input type="radio" name="pm" value="manual"><span>照送貨清單目前的順序</span></label>' +
     '<b>出發地點</b>' +
     '<label class="opt"><input type="radio" name="pf" value="start"' + (hasStart && !started ? ' checked' : '') + (hasStart ? '' : ' disabled') + '><span>起點：' + esc(ST.trip.start || '（未設定）') + '</span></label>' +
@@ -1416,7 +1416,7 @@ function renderDrive() {
     '</span><button onclick="drUndo()">復原</button></div>' : '';
   $('drList').innerHTML = justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
-  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd()">🎤 說地址插單</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
+  $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
 function drCard(s, isCur, open, delay, paused) {
   const st = s.status, eta = st === '待送' ? drEta(s, delay) : '';
@@ -1426,7 +1426,7 @@ function drCard(s, isCur, open, delay, paused) {
     ? [s.legKm !== '' && s.legKm + ' km · ' + fmtMin(s.legMin), eta && '<b' + (late ? ' class="late"' : '') + '>預計 ' + eta + '</b>', twText(s) && twTag(s), paused && '<span class="badge warn">暫停</span>', s.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　')
     : (st === '已送達' ? '<b>✓ ' + doneHm(s) + ' 送達</b>' : '<b class="late">✗ ' + doneHm(s) + ' 沒送成' + (s.reason ? '（' + esc(s.reason) + '）' : '') + '</b>');
   let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + '"><button class="dr-row" data-open="' + s.id + '">' + no +
-    '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + (s.geo === '約略' ? ' <span class="badge warn">約略</span>' : '') + '</div>' : '') +
+    '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + (s.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : '') + '</div>' : '') +
     '<div class="dr-meta">' + meta + '</div></span><span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span></button>';
   if (open) {
     h += '<div class="dr-body">';
@@ -1439,7 +1439,7 @@ function drCard(s, isCur, open, delay, paused) {
       (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') +
       (s.phone ? '<div><a href="tel:' + telOf(s.phone) + '" style="font-size:17px">📞 ' + esc(s.phone) + '</a></div>' : '') +
       (s.note ? '<div class="warnbox">📝 ' + esc(s.note) + '</div>' : '') +
-      (st === '待送' && (s.lat === '' || s.geo === '約略') ? '<p style="margin:8px 0 0"><button class="btn sec small" onclick="pinHereFor(\'' + s.id + '\')">📍 位置' + (s.lat === '' ? '找不到' : '是約略的') + '：到了按這裡記下</button></p>' : '');
+      (st === '待送' && (s.lat === '' || s.geo === '約略') ? '<p style="margin:8px 0 0"><button class="btn sec small" onclick="pinHereFor(\'' + s.id + '\')">📍 位置' + (s.lat === '' ? '找不到' : '不準') + '：到了按這裡記下</button></p>' : '');
     if (st !== '待送') h += '<p style="margin:10px 0 0"><button class="btn sec small" onclick="setStatus(ST.stops.find(x => x.id === \'' + s.id + '\'), \'待送\')">↩ 改回待送</button></p>';
     h += '</div>';
   }
@@ -1645,7 +1645,7 @@ function showHelp() {
     row('要打電話給客戶', '按卡片上的電話號碼') +
     row('地圖帶錯地方', '按「ⓘ」→「📍 位置不對？」→「我到了，用我現在的位置」（下次就記住）') +
     row('不小心按錯「完成」', '點下面送過的那一家 →「↩ 改回待送」') +
-    row('路上客戶打來加訂', '按最下面「🎤 說地址插單」') +
+    row('路上客戶打來加訂', '按最下面「🎤 路上加一家」') +
     '</table><div class="mut" style="margin-top:12px;line-height:1.6">上面的數字和進度條只是讓您看送到第幾家、還剩多少，不用按。</div>' +
     '<p><button class="btn" id="hpOk">知道了</button></p>', (el, close) => { el.querySelector('#hpOk').onclick = close; });
 }
@@ -1774,7 +1774,7 @@ function loadReport() {
       r.drivers.filter(d => d.fail).map(d => '<div class="mut">' + esc(d.driver) + ' 沒送成：' + reasons(d.reasons) + '</div>').join('') + '</div>' +
       '<div class="card"><b>每台車</b>' + tbl(['車牌', '趟', '送達', '沒送成', '公里'], (r.plates || []).map(d => [d.plate.charAt(0) === '（' ? esc(d.plate) : plateTag(d.plate), d.trips, d.done, d.fail, d.km])) + '</div>' +
       '<div class="card"><b>每一天</b>' + tbl(['日期', '趟', '送達', '沒送成', '公里'], r.days.map(d => [esc(d.date.slice(5).replace('-', '/')), d.trips, d.done, d.fail, d.km])) + '</div>' +
-      '<button class="btn sec" onclick="downloadReport()">⬇ 下載 Excel 可以開的檔案（CSV）</button>';
+      '<button class="btn sec" onclick="downloadReport()">⬇ 下載成 Excel</button>';
   });
 }
 function downloadReport() {
@@ -1896,7 +1896,7 @@ async function ensureMap() {
     const nlsc = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/EMAP/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 19, attribution: '© 內政部國土測繪中心' }).addTo(MAP);
     const photo = L.tileLayer('https://wmts.nlsc.gov.tw/wmts/PHOTO2/default/GoogleMapsCompatible/{z}/{y}/{x}', { maxZoom: 19, attribution: '© 內政部國土測繪中心' });
     nlsc.on('tileerror', () => { if (++errs > 6 && !osm) { osm = true; MAP.removeLayer(nlsc); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(MAP); } });
-    L.control.layers({ '地圖': nlsc, '空照圖': photo }, null, { position: 'topright', collapsed: false }).addTo(MAP);
+    L.control.layers({ '地圖': nlsc, '衛星圖': photo }, null, { position: 'topright', collapsed: false }).addTo(MAP);
     LAYER = L.layerGroup().addTo(MAP);
     MAP.on('click', e => { if (PIN) PIN.marker.setLatLng(e.latlng); });
   }
@@ -1919,7 +1919,7 @@ async function showMap() {
   ST.stops.filter(s => s.lat !== '').forEach(s => {
     const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
     L.marker([s.lat, s.lng], { icon: icon(s.seq, cls) }).addTo(LAYER)
-      .bindPopup('<b>' + s.seq + '. ' + esc(s.client) + '</b><br>' + esc(s.addr) + '<br>' + badgeOf(s) + (s.geo === '約略' ? ' <span class="badge warn">約略</span>' : '') + ' ' + twTag(s, true) +
+      .bindPopup('<b>' + s.seq + '. ' + esc(s.client) + '</b><br>' + esc(s.addr) + '<br>' + badgeOf(s) + (s.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : '') + ' ' + twTag(s, true) +
         '<br><a target="_blank" href="' + mapsUrl(s) + '">🧭 導航到這裡</a>　<a href="#" onclick="editPin(\'' + s.id + '\');return false">📍 修正位置</a>');
     pts.push([s.lat, s.lng]);
   });
@@ -1961,7 +1961,7 @@ async function showPinEditor(req) {
 }
 async function pinHere() {
   const p = await here();
-  if (!p) { alert('抓不到目前位置（手機可能沒允許定位）。請改用拖的。'); return; }
+  if (!p) { alert('抓不到目前位置（手機可能沒有允許 App 使用位置）。請改用拖的。'); return; }
   PIN.marker.setLatLng([p.lat, p.lng]);
   MAP.setView([p.lat, p.lng], 18);
 }
@@ -1972,7 +1972,7 @@ function pinSave() {
 /** 開始送貨時：司機到了，直接用現在的位置（不換頁） */
 async function pinHereFor(id) {
   const p = await here();
-  if (!p) { alert('抓不到目前位置（手機可能沒允許定位）。可以回到清單按「約略 › 修正」用拖的。'); return; }
+  if (!p) { alert('抓不到目前位置（手機可能沒有允許 App 使用位置）。可以回到清單按「位置不準 › 修正」用拖的。'); return; }
   call('setPin', { id, lat: p.lat, lng: p.lng }, '記下位置…').then(r => { refresh(r); if (ST.view === 'drive') renderDrive(); afterPin(r); });
 }
 function afterPin(r) {
@@ -2078,7 +2078,7 @@ function guessMap(head) {
 function renderMap() {
   const head = IMP.rows[IMP.head] || [];
   const opts = sel => '<option value="">（沒有）</option>' + head.map((h, j) => '<option value="' + j + '"' + (sel === j ? ' selected' : '') + '>' + String.fromCharCode(65 + (j % 26)) + (j >= 26 ? j : '') + '欄：' + esc(h || '(空白)') + '</option>').join('');
-  $('mapTbl').innerHTML = '<tr><td>標題列</td><td><select onchange="IMP.head=+this.value;IMP.map=guessMap(IMP.rows[IMP.head]||[]);renderMap()">' +
+  $('mapTbl').innerHTML = '<tr><td>標題在哪一列</td><td><select onchange="IMP.head=+this.value;IMP.map=guessMap(IMP.rows[IMP.head]||[]);renderMap()">' +
     IMP.rows.slice(0, 10).map((r, i) => '<option value="' + i + '"' + (i === IMP.head ? ' selected' : '') + '>' + esc(r.filter(Boolean).join(' | ').slice(0, 40)) + '</option>').join('') + '</select></td></tr>' +
     FIELDS.map(f => '<tr><td style="white-space:nowrap">' + f[1] + '</td><td><select data-k="' + f[0] + '">' + opts(IMP.map[f[0]]) + '</select></td></tr>').join('');
   $('mapTbl').querySelectorAll('select[data-k]').forEach(s => s.onchange = () => { IMP.map[s.dataset.k] = s.value === '' ? undefined : +s.value; renderPreview(); });
@@ -2259,7 +2259,7 @@ function renderGeo() {
   const skip = IMP.skip || (IMP.skip = {});
   const n = gs.length - Object.keys(skip).length;
   $('geoMsg').textContent = '查好了：' + gs.length + ' 家，' + (gs.length - bad.length) + ' 家找到位置' + (bad.length ? '，' + bad.length + ' 家找不到' : '');
-  const item = (i, kind) => '<div class="card" style="' + (skip[i] ? 'opacity:.45' : '') + '"><div><b>' + esc(gs[i].client) + '</b> ' + (kind === 'bad' ? '<span class="badge fail">找不到</span>' : '<span class="badge warn">約略：' + esc(R[i].found) + '</span>') + '</div>' +
+  const item = (i, kind) => '<div class="card" style="' + (skip[i] ? 'opacity:.45' : '') + '"><div><b>' + esc(gs[i].client) + '</b> ' + (kind === 'bad' ? '<span class="badge fail">找不到</span>' : '<span class="badge warn">大概位置：' + esc(R[i].found) + '</span>') + '</div>' +
     '<div class="row" style="margin-top:6px"><input class="in grow" data-fix="' + i + '" value="' + esc(gs[i].addr) + '"><button class="btn small" data-re="' + i + '">重查</button></div>' +
     '<label class="opt" style="padding-bottom:0"><input type="checkbox" data-skip="' + i + '"' + (skip[i] ? ' checked' : '') + '><span>這家不要加入</span></label></div>';
   $('geoProb').innerHTML = (bad.length ? '<h3 style="margin:14px 4px 6px">找不到位置（請改地址後按重查，或不要加入）</h3>' + bad.map(i => item(i, 'bad')).join('') : '') +
