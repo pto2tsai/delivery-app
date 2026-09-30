@@ -145,6 +145,10 @@
   .dr-meta b.late{color:var(--red)}
   .dr-body{border-top:1.5px dashed #dfe5e8;padding:12px 14px 14px}
   .dr-btns{display:grid;grid-template-columns:52px 1fr 1fr 1fr;gap:8px;margin-top:10px}
+  .dr-card{position:relative}
+  .dr-nav{position:absolute;top:10px;right:10px;z-index:2;background:var(--blue);color:#fff;border-radius:12px;padding:8px 13px;font-weight:800;font-size:16px;text-decoration:none;white-space:nowrap}
+  .dr-row.has-nav .dr-name{padding-right:96px;min-height:36px}   /* 只有店名那一行讓位給導航，地址、時間用整行 */
+  .btn.miss{background:#fff;color:var(--red);border:1.5px solid #f3a59e}
   .dr-btns .btn{padding:15px 4px;font-size:17px;text-align:center;text-decoration:none}
   .dr-i{border:1.5px solid #d5dde2;background:#fff;border-radius:12px;font-size:20px;color:#50606b}
   .st-r{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
@@ -1337,7 +1341,7 @@ function here() {
 
 /* ================= 開始送貨 =================
  * 上面：配送中（計時）、第幾站、完成／沒送成／暫停／待送、進度、剩幾公里、預計幾點送完
- * 下面：一家一張卡，目前這家展開（ⓘ、導航、完成、沒送到＝等下再來／白跑一趟）
+ * 下面：一家一張卡，右上角導航；目前這家展開（ⓘ、晚點送、白跑了、送達）
  * 暫停＝先跳過，排到最後；計時、暫停記在這支手機
  */
 const drKey = k => 'dh_' + k + '_' + ST.trip.id;
@@ -1409,7 +1413,7 @@ function renderDrive() {
     (fail.length ? '<p><button class="btn" onclick="carryOver()">沒送成的 ' + fail.length + ' 家移到' + nextShiftLabel(t) + '</button></p>' : '') +
     '<p><button class="btn sec" onclick="driveEnd(true)">結束，回到行程</button></p></div>' : '';
   const j = D.just, js = j && ss.find(x => x.id === j.id);
-  const justBar = js ? '<div class="dr-just ' + j.kind + '"><span class="grow">' + (j.kind === 'done' ? '✓ <b>' + esc(js.client || js.addr) + '</b> ' + doneHm(js) + ' 已送達' : j.kind === 'fail' ? '✗ <b>' + esc(js.client || js.addr) + '</b> 沒送成（' + esc(js.reason || '') + '）' : '⏸ <b>' + esc(js.client || js.addr) + '</b> 晚點送，排到最後') +
+  const justBar = js ? '<div class="dr-just ' + j.kind + '"><span class="grow">' + (j.kind === 'done' ? '✓ <b>' + esc(js.client || js.addr) + '</b> ' + doneHm(js) + ' 已送達' : j.kind === 'fail' ? '✗ <b>' + esc(js.client || js.addr) + '</b> 白跑了（' + esc(js.reason || '') + '）' : '⏸ <b>' + esc(js.client || js.addr) + '</b> 晚點送，排到最後') +
     '</span><button onclick="drUndo()">復原</button></div>' : '';
   $('drList').innerHTML = justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
@@ -1425,16 +1429,18 @@ function drCard(s, isCur, open, delay, paused) {
   const meta = st === '待送'
     ? [s.legKm !== '' && s.legKm + ' km · ' + fmtMin(s.legMin), eta && '<b' + (late ? ' class="late"' : '') + '>預計 ' + eta + '</b>', twText(s) && twTag(s), paused && '<span class="badge warn">晚點送</span>', s.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　')
     : (st === '已送達' ? '<b>✓ ' + doneHm(s) + ' 送達</b>' : '<b class="late">✗ ' + doneHm(s) + ' 沒送成' + (s.reason ? '（' + esc(s.reason) + '）' : '') + '</b>');
-  let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + '"><button class="dr-row" data-open="' + s.id + '">' + no +
+  // 導航放卡片右上角（跟店名同一行）；沒位置、已經送完的顯示展開箭頭
+  const nav = st === '待送' && s.lat !== '' ? '<a class="dr-nav nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveStart()">➤ 導航</a>' : '';
+  let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + '">' + nav + '<button class="dr-row' + (nav ? ' has-nav' : '') + '" data-open="' + s.id + '">' + no +
     '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + fixTag + '</div>' : fixTag) +
-    '<div class="dr-meta">' + meta + '</div></span><span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span></button>';
+    '<div class="dr-meta">' + meta + '</div></span>' + (nav ? '' : '<span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span>') + '</button>';
   if (open) {
     h += '<div class="dr-body">';
-    // 最常按的放最上面（不用往下滑）：ⓘ、導航、完成、暫停
+    // 配送狀態一排（不用往下滑、不用多按一層）：ⓘ ｜ 晚點送 ｜ 白跑了 ｜ 送達（最右邊，大拇指最好按）
     if (st === '待送') h += '<div class="dr-btns" style="margin:0 0 10px">' + '<button class="dr-i" onclick="driveInfo(\'' + s.id + '\')" title="更多">ⓘ</button>' +
-      (s.lat !== '' ? '<a class="btn sec nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveStart()">➤ 導航</a>' : '<span class="btn sec" style="opacity:.5">沒位置</span>') +
-      '<button class="btn" onclick="driveDone(\'' + s.id + '\')">✓ 完成</button>' +
-      (paused ? '<button class="btn pause" onclick="driveResume(\'' + s.id + '\')">▶ 繼續</button>' : '<button class="btn pause" onclick="driveMiss(\'' + s.id + '\')">⏸ 沒送到</button>') + '</div>';
+      (paused ? '<button class="btn pause" onclick="driveResume(\'' + s.id + '\')">▶ 繼續</button>' : '<button class="btn pause" onclick="driveSkip(\'' + s.id + '\')">⏸ 晚點送</button>') +
+      '<button class="btn miss" onclick="driveFail(\'' + s.id + '\')">✗ 白跑了</button>' +
+      '<button class="btn dr-done" onclick="driveDone(\'' + s.id + '\')">送達 ✅</button></div>';
     h += (s.items || s.qty !== '' ? '<div style="font-size:18px">📦 ' + esc(s.items) + (s.qty !== '' ? '　<b>' + s.qty + ' 件</b>' : '') + '</div>' : '') +
       (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') +
       (s.phone ? '<div><a href="tel:' + telOf(s.phone) + '" style="font-size:17px">📞 ' + esc(s.phone) + '</a></div>' : '') +
@@ -1444,18 +1450,13 @@ function drCard(s, isCur, open, delay, paused) {
   }
   return h + '</div>';
 }
-/**
- * ⏸ 沒送到：等下再來（排到最後）或白跑一趟（選原因）。
- * 以前是「暫停」「沒送成」兩個地方，都是「這家現在送不了」，合成一個
- */
-function driveMiss(id) {
+/** ✗ 白跑了：選原因（客戶不在、拒收…），按錯可以復原 */
+function driveFail(id) {
   const s = ST.stops.find(x => x.id === id);
   if (!s) { quietRefresh(); return; }
   if (!tapOk()) return;
-  sheet('<h2>' + esc(s.client || s.addr) + ' 沒送到</h2>' +
-    '<button class="btn pause" data-m="later" style="width:100%;padding:16px;font-size:19px">⏸ 等下再來<span style="display:block;font-size:14px;font-weight:600">排到最後，先送下一家</span></button>' +
-    '<div class="f" style="margin-top:14px">白跑一趟（選原因）</div><div class="reasons">' + REASONS.map(x => '<button class="btn sec" data-r="' + x + '">' + x + '</button>').join('') + '</div>', (el, close) => {
-    el.querySelector('[data-m=later]').onclick = () => { close(); LAST_TAP = 0; driveSkip(id); };
+  sheet('<h2>✗ ' + esc(s.client || s.addr) + ' 白跑了</h2><div class="mut" style="margin-bottom:10px">選原因（客戶等下會在的話，改按「⏸ 晚點送」）</div><div class="reasons">' +
+    REASONS.map(x => '<button class="btn sec" data-r="' + x + '">' + x + '</button>').join('') + '</div>', (el, close) => {
     el.querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
       let r = b.dataset.r;
       if (r === '其他') { r = prompt('請輸入原因') || ''; if (!r) return; }
@@ -1654,16 +1655,16 @@ function showHelp() {
     step(3, '「路線規劃」→ 排好路線', '系統自動排最順的順序') +
     step(4, '下方「導航」開始送', '') +
     '<h3 style="margin:18px 0 4px">送每一家都一樣，重複這三步</h3>' +
-    step('①', '按「➤ 導航」', 'Google 地圖帶您開過去') +
+    step('①', '按右上角「➤ 導航」', 'Google 地圖帶您開過去') +
     step('②', '到了，把貨交給客戶', '') +
-    step('③', '按綠色的「✓ 完成」', '記下送到的時間，辦公室馬上看得到；下一家自動跳出來') +
-    '<div class="warnbox" style="font-size:17px">一整趟就是：<b>導航 → 送貨 → 完成</b>，一直重複到送完。</div>' +
+    step('③', '按綠色的「送達 ✅」', '記下送到的時間，辦公室馬上看得到；下一家自動跳出來') +
+    '<div class="warnbox" style="font-size:17px">一整趟就是：<b>導航 → 送貨 → 送達</b>，一直重複到送完。</div>' +
     '<h3 style="margin:18px 0 4px">遇到狀況</h3><table style="width:100%;border-collapse:collapse;font-size:16px">' +
-    row('客戶不在、拒收、店休，<b>白跑一趟</b>', '按「⏸ 沒送到」→「白跑一趟」選原因') +
-    row('客戶說晚點再來，<b>等一下再回來送</b>', '按「⏸ 沒送到」→「等下再來」（排到最後，先送下一家）') +
+    row('客戶不在、拒收、店休，<b>白跑了</b>', '按「✗ 白跑了」→ 選原因') +
+    row('客戶說晚點再來，<b>等一下再回來送</b>', '按「⏸ 晚點送」（排到最後，先送下一家）') +
     row('要打電話給客戶', '按卡片上的電話號碼') +
     row('地圖帶錯地方', '按地址旁的「📍 位置不準」或「ⓘ」→「📍 改位置」→「我到了，用我現在的位置」（下次就記住）') +
-    row('不小心按錯「完成」', '點下面送過的那一家 →「↩ 改回待送」') +
+    row('不小心按錯（送達、白跑了、晚點送）', '馬上按上面細條的「復原」；過了的話，點下面那一家 →「↩ 改回待送」') +
     row('路上客戶打來加訂', '按最下面「🎤 路上加一家」（說或打字都可以）') +
     '</table><div class="mut" style="margin-top:12px;line-height:1.6">上面的數字和進度條只是讓您看送到第幾家、還剩多少，不用按。</div>' +
     '<p><button class="btn" id="hpOk">知道了</button></p>', (el, close) => { el.querySelector('#hpOk').onclick = close; });
