@@ -201,6 +201,16 @@
     <p style="margin-bottom:0"><button class="btn sec" id="fdAdd" onclick="fleetAdd()">＋ 加入</button></p>
   </div>
   <div class="card">
+    <b style="font-size:18px">📅 每週路線</b><div class="mut">新增行程時照星期幾、上午／下午自動帶路線；從待分配挑時，這些鄉鎮的客戶先勾好。點一下可以改</div>
+    <div id="stWeek"></div>
+  </div>
+  <div class="card">
+    <b style="font-size:18px">📚 匯入過去的訂單（當範本）</b>
+    <div class="mut" style="margin-top:4px;line-height:1.6">選過去的 ERP 日報表（可以一次選很多個，例如一兩個月）。之後新增「星期一上午」這種行程，常叫的客戶會先勾好，<b>不用每天匯入</b>。檔名要有日期（例如 115.09.23地址日報表）。同一個檔案匯入兩次不會重複。</div>
+    <div class="mut" id="stHist" style="margin-top:6px"></div>
+    <label class="btn sec" style="display:block;text-align:center;margin-top:10px"><input id="histIn" type="file" multiple accept=".xlsx,.xls,.csv,.txt" class="hide" onchange="importHistory(this.files).finally(() => { this.value = ''; })">📚 選檔案匯入</label>
+  </div>
+  <div class="card">
     <b style="font-size:18px">像 App 一樣用</b>
     <div class="mut" style="margin-top:6px;line-height:1.6">iPhone：Safari 下方「分享」→「加入主畫面」<br>Android：Chrome 右上角 ⋮ →「加到主畫面」<br>手機的返回鍵會回到上一個畫面。</div>
   </div>
@@ -549,7 +559,7 @@ function renderTrips() {
 }
 function newTrip() {
   const d = ST.today || new Date().toISOString().slice(0, 10);
-  sheet('<h2>新增行程</h2><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
+  sheet('<h2>新增行程</h2><div id="ntWeek"></div><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
     '<label class="f">名稱＝路線（例如：雲林、台南線）</label><input id="ntName" class="in" placeholder="取名字，下次才能從常用路線帶客戶">' +
     '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填" list="dlDrivers" autocomplete="off">' +
     '<label class="f">車牌</label><input id="ntPlate" class="in" placeholder="例如：ABC-1234（可以不填）" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="ntPlates"></div>' +
@@ -563,7 +573,21 @@ function newTrip() {
       shift = sh;
       $('ntAM').classList.toggle('on', sh === '上午'); $('ntPM').classList.toggle('on', sh === '下午');
       if (!departTouched) $('ntDepart').value = sh === '下午' ? '13:00' : '08:00';
+      showWeek();
     };
+    // 每週路線：照日期是星期幾、上午／下午，自動帶路線名稱（自己打過名稱就不動）
+    let autoName = '';
+    const showWeek = () => {
+      const r = WEEKLY && weekRoute($('ntDate').value, shift);
+      const box = $('ntWeek');
+      if (!box) return;
+      if (!r) { box.innerHTML = ''; if ($('ntName').value === autoName) $('ntName').value = autoName = ''; return; }
+      box.innerHTML = '<b>📅 今天的路線</b><div class="chips"><button class="chip' + ($('ntName').value === r.name ? ' on' : '') + '" id="ntWk">' + esc(r.name) + '：' + esc(r.inc.join('・')) + '</button></div>';
+      if (!$('ntName').value || $('ntName').value === autoName) { $('ntName').value = autoName = r.name; $('ntWk').classList.add('on'); }
+      $('ntWk').onclick = () => { $('ntName').value = autoName = r.name; $('ntWk').classList.add('on'); $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.remove('on')); };
+    };
+    $('ntDate').onchange = showWeek;
+    loadWeekly().then(showWeek);
     $('ntAM').onclick = () => setShift('上午'); $('ntPM').onclick = () => setShift('下午');
     $('ntDepart').oninput = () => { departTouched = true; };
     setShift(shift);
@@ -571,19 +595,21 @@ function newTrip() {
     let known = [];
     call('routes', {}, false).then(rs => {
       known = rs.map(r => r.name);
+      rs = rs.filter(r => !isWeekName(r.name));
       if (!rs.length || !$('ntRoutes')) return;
       $('ntRoutes').innerHTML = '<b>常用路線</b><div class="mut">點一下，建立後勾今天有叫貨的客戶就好</div><div class="chips">' +
         rs.slice(0, 12).map((r, i) => '<button class="chip" data-r="' + i + '">' + esc(r.name) + ' <span class="mut" style="font-size:13px">' + r.trips + ' 趟</span></button>').join('') + '</div>';
       $('ntRoutes').querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
         $('ntName').value = rs[+b.dataset.r].name;
         $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
+        if ($('ntWk')) $('ntWk').classList.toggle('on', $('ntName').value === $('ntWk').textContent.split('：')[0]);
       });
     });
     el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, plate: $('ntPlate').value, depart: $('ntDepart').value, shift }, '建立中…')
       .then(r => {
         close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id });
         // 名稱是以前用過的路線（點的或自己打的）：直接跳出常用客戶讓他勾
-        if (known.indexOf(r.trip.name) >= 0) setTimeout(() => pickFromRoute(r.trip.name), 50);
+        if (known.indexOf(r.trip.name) >= 0 || isWeekName(r.trip.name)) setTimeout(() => pickFromRoute(r.trip.name), 50);
       });
   });
 }
@@ -593,6 +619,8 @@ function showSettings() {
   show('settings');
   $('hmAddr').value = ST.home ? ST.home.addr : '';
   loadFleetSettings();
+  $('stWeek').innerHTML = '<div class="mut">讀取中…</div>';
+  loadWeekly(true).then(renderWeeklySettings);
 }
 function saveHome() {
   call('saveHome', { addr: $('hmAddr').value }, '查地址…').then(h => { ST.home = h; toast('已儲存：' + h.addr); });
@@ -651,7 +679,7 @@ function clientMenu(i) {
 
 /* ================= 行程 ================= */
 /** 行程標題：雲林・上午 */
-const tripTitle = t => t.name === '待分配' ? '📥 待分配 ' + t.date.slice(5).replace('-', '/') : t.name + (t.shift ? '・' + t.shift : '');
+const tripTitle = t => t.name === '待分配' ? '📥 待分配 ' + t.date.slice(5).replace('-', '/') : t.name + (t.shift && t.name.indexOf(t.shift) < 0 ? '・' + t.shift : '');   // 「星期一下午」不用再加・下午
 /** 沒送完的移到哪一趟：今天（或以後）上午 → 同一天下午；其他 → 明天上午（跟後端一樣） */
 function nextShiftLabel(t) {
   const today = ST.today || new Date().toISOString().slice(0, 10);
@@ -1231,9 +1259,11 @@ function pickFromRoute(name) {
   const sh = ST.trip.shift;
   call('routeClients', { name, trip: ST.trip.id, shift: sh }, '讀取常用客戶…').then(list => {
     if (!list.length) { toast('「' + name + '」以前還沒送過。先用匯入、新增地址或念訂單加客戶，下次就會出現在這裡', 5000); return; }
-    const pick = {};
+    const pick = {}, wk = isWeekName(name), day = wk ? name.slice(2, 3) : '';
+    list.forEach((c, i) => { if (c.sug && !c.inTrip) pick[i] = 1; });   // 常叫的先勾好，今天沒叫的取消就好
     const md = d => d ? d.slice(5).replace('-', '/') : '';
-    sheet('<h2>📋 ' + esc(name) + '的常用客戶</h2><div class="mut">勾今天有叫貨的。' + esc(sh) + '常送的排前面。</div>' +
+    const nSug = Object.keys(pick).length;
+    sheet('<h2>📋 ' + esc(name) + (wk ? '' : '的常用客戶') + '</h2><div class="mut">' + (nSug ? '常叫的 ' + nSug + ' 家已經先勾好，<b>看著紙本把今天沒叫的取消</b>、沒勾到的勾起來。' : '勾今天有叫貨的。') + (wk ? '星期' + day + '常叫的排前面。' : esc(sh) + '常送的排前面。') + '</div>' +
       '<div class="row" style="margin:10px 0"><input id="rcQ" class="in grow" placeholder="🔍 找客戶" autocomplete="off"><button class="btn small sec" id="rcAll">全選</button><button class="btn small sec" id="rcNone">全不選</button></div>' +
       '<div id="rcList"></div><p><button class="btn" id="rcGo" disabled>加入</button></p>', (el, close) => {
       const go = el.querySelector('#rcGo');
@@ -1242,7 +1272,7 @@ function pickFromRoute(name) {
         $('rcList').innerHTML = list.map((c, i) => (q && (c.client + c.addr).indexOf(q) < 0) ? '' :
           '<label class="prev row' + (c.inTrip ? ' off' : '') + '" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"' + (pick[i] ? ' checked' : '') + (c.inTrip ? ' disabled' : '') + '>' +
           '<div class="grow"><b style="font-size:17px">' + esc(c.client || '（沒有名稱）') + '</b>' + (c.inTrip ? ' <span class="badge done">已在清單</span>' : '') +
-          '<div class="mut">' + esc(c.addr) + '</div><div class="mut">上午 ' + c.am + ' 次・下午 ' + c.pm + ' 次・上次 ' + md(c.last) + (twText(c) ? '　' + twTag(c) : '') +
+          '<div class="mut">' + esc(c.addr) + '</div><div class="mut">' + (wk ? '星期' + day + ' ' + c.wd + '/' + c.wdOf + ' 次・共 ' + c.days + ' 次' : '上午 ' + c.am + ' 次・下午 ' + c.pm + ' 次') + '・上次 ' + md(c.last) + (twText(c) ? '　' + twTag(c) : '') +
           (c.lat === '' ? '　<span class="badge fail">沒有位置</span>' : '') + '</div></div></label>').join('');
         $('rcList').querySelectorAll('[data-i]').forEach(x => x.onchange = () => { if (x.checked) pick[x.dataset.i] = 1; else delete pick[x.dataset.i]; count(); });
         count();
@@ -1269,6 +1299,114 @@ function showAdmin() {
   $('hTitle').textContent = '後台';
   show('admin');
 }
+/* ================= 每週路線（設定裡可以改） ================= */
+let WEEKLY = null;
+const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
+const isWeekName = n => /^星期[一二三四五六](上午|下午)$/.test(String(n || ''));
+function loadWeekly(fresh) {
+  if (WEEKLY && !fresh) return Promise.resolve(WEEKLY);
+  return call('weekly', {}, false).then(w => (WEEKLY = w));
+}
+/** 某一天（yyyy-mm-dd）上午／下午是哪一條路線；禮拜天、沒設鄉鎮的沒有 */
+function weekRoute(date, shift) {
+  if (!WEEKLY || !date) return null;
+  const d = WEEKDAY[new Date(date + 'T00:00:00').getDay()];
+  const r = WEEKLY.routes.find(x => x.day === d && x.shift === shift);
+  return r && r.inc.length ? r : null;
+}
+function renderWeeklySettings() {
+  const w = WEEKLY, h = w.history;
+  $('stWeek').innerHTML = ['上午', '下午'].map(sh => '<div style="margin-top:8px;font-weight:800">' + sh + '</div>' + w.routes.filter(r => r.shift === sh).map(r =>
+    '<button class="se" data-k="' + r.key + '" style="align-items:flex-start"><b style="white-space:nowrap">星期' + r.day + '</b><span class="grow">' + (r.inc.length ? esc(r.inc.join('・')) : '<span class="mut">（沒有）</span>') +
+    (r.exc.length ? '<div class="mut">不包含：' + esc(r.exc.join('・')) + '</div>' : '') + '</span><span class="mut" style="white-space:nowrap">' + r.clients + ' 家 ›</span></button>').join('')).join('');
+  $('stWeek').querySelectorAll('[data-k]').forEach(b => b.onclick = () => editWeekly(w.routes.find(r => r.key === b.dataset.k)));
+  $('stHist').textContent = h.days ? '已經匯入 ' + h.days + ' 天、' + h.clients + ' 家客戶（' + h.from + ' ～ ' + h.to + '）' : '還沒匯入過。';
+}
+function editWeekly(r) {
+  sheet('<h2>星期' + r.day + r.shift + '</h2><div class="mut">鄉鎮用「、」或「.」隔開，例如：新營、鹽水、佳里。「嘉義市」＝整個嘉義市；「台南市區」＝中西、東、南、北、安平區</div>' +
+    '<label class="f">送這些鄉鎮</label><input id="wkInc" class="in" value="' + esc(r.inc.join('、')) + '">' +
+    '<label class="f">不包含</label><input id="wkExc" class="in" value="' + esc(r.exc.join('、')) + '">' +
+    '<p><button class="btn" id="wkGo">儲存</button></p><button class="btn sec" id="wkReset">改回原本的路線表</button>', (el, close) => {
+    const save = args => call('saveWeekly', Object.assign({ key: r.key }, args), '儲存中…').then(w => { WEEKLY = w; close(); renderWeeklySettings(); toast('已儲存'); });
+    el.querySelector('#wkGo').onclick = () => save({ inc: $('wkInc').value, exc: $('wkExc').value });
+    el.querySelector('#wkReset').onclick = () => save({ reset: true });
+  });
+}
+
+/* ================= 匯入過去的訂單（當每週路線的範本） =================
+ * 一次選很多個 ERP 日報表：日期看檔名（115.09.23地址日報表 → 2026-09-23），檔名沒有就看表頭；
+ * 表格裡有「日期」欄的用每一列的日期。只留自己的車送的縣市，查好位置後存到「歷史訂單」
+ */
+function fileDate(text) {
+  const m = String(text).match(/(\d{2,4})[.\-_\/年](\d{1,2})[.\-_\/月](\d{1,2})/);
+  if (!m) return '';
+  let y = +m[1];
+  if (y < 1911) y += 1911;   // 民國年
+  const mo = +m[2], d = +m[3];
+  return y > 2000 && mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? y + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2) : '';
+}
+async function importHistory(files) {
+  files = Array.from(files || []);
+  if (!files.length) return;
+  busy('讀取檔案…');
+  try { await xlsxLib(); } catch (e) { busy(false); alert('Excel 讀取工具下載失敗，請確認網路後再選一次'); return; }
+  const rows = [], bad = [], seen = {};
+  for (let f = 0; f < files.length; f++) {
+    busy('讀取檔案… ' + (f + 1) + ' / ' + files.length);
+    let wb;
+    try {
+      const buf = await files[f].arrayBuffer();
+      if (/\.(csv|txt)$/i.test(files[f].name)) {
+        let text;
+        try { text = new TextDecoder('utf-8', { fatal: true }).decode(buf); } catch (e) { text = new TextDecoder('big5').decode(buf); }
+        wb = XLSX.read(text.replace(/^\uFEFF/, ''), { type: 'string', raw: true });
+      } else wb = XLSX.read(buf, { type: 'array' });
+    } catch (e) { bad.push(files[f].name + '（讀不懂）'); continue; }
+    const all = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, raw: false, defval: '' }).map(r => r.map(v => String(v).trim())).filter(r => r.some(v => v));
+    IMP.rows = all; IMP.head = guessHeader(all);
+    const head = all[IMP.head] || [], m = guessMap(head);
+    const dCol = head.findIndex(h => /日期/.test(h));
+    const top = all.slice(0, IMP.head + 1).map(r => r.join(' ')).join(' ');   // 表頭：「銷貨日: 2026/09/23」比「製表日期」準
+    const fd = fileDate(files[f].name) || fileDate((top.match(/(銷貨|出貨|送貨|單據)日期?\s*[:：]?\s*([\d.\/\-年月]+)/) || [])[2] || '') || fileDate(top);
+    if (m.addr == null) { bad.push(files[f].name + '（找不到地址欄）'); continue; }
+    let n = 0;
+    all.slice(IMP.head + 1).forEach(r => {
+      const get = k => (m[k] == null ? '' : String(r[m[k]] || '').trim());
+      const raw = get('addr');
+      if (!raw || raw === String(head[m.addr] || '').trim() || /^<.*>$|^第\s*\d+\s*頁$/.test(raw)) return;
+      const date = (dCol >= 0 && fileDate(r[dCol])) || fd;
+      if (!date) return;
+      const sp = splitAddr(raw);
+      sp.addr = fillCounty(sp.addr);
+      if (OWN_COUNTIES.indexOf(countyOf(sp.addr)) < 0 || PARCEL_RE.test(raw)) return;   // 只留自己的車送的
+      const note = [sp.note, get('note')].filter(Boolean).join(' ');
+      n++;
+      const k = date + '|' + sp.addr.replace(/臺/g, '台');
+      if (seen[k]) return;   // 同一天同一家的其他品項
+      rows.push(seen[k] = Object.assign({ date, client: get('client'), addr: sp.addr, phone: get('phone') || sp.phones.join(' / '), note }, parseTimes(note)));
+    });
+    if (!n) bad.push(files[f].name + (fd || dCol >= 0 ? '（沒有自己的車送的地址）' : '（看不出日期，檔名要有日期，例如 115.09.23）'));
+  }
+  IMP.rows = []; IMP.head = 0;
+  if (!rows.length) { busy(false); alert('沒有可以匯入的資料。\n' + bad.join('\n')); return; }
+  // 查位置（查過的地址很快；新地址一次 20 個）
+  const addrs = Array.from(new Set(rows.map(x => x.addr)));
+  for (let i = 0; i < addrs.length; i += 20) {
+    busy('查客戶位置… ' + i + ' / ' + addrs.length);
+    try { await rpc('geocode', { addrs: addrs.slice(i, i + 20) }, ST.pin); } catch (e) { busy(false); alert('查位置中斷了（' + e.message + '），請再匯入一次（已經查好的不會重查）'); return; }
+  }
+  let added = 0, skipped = 0;
+  for (let i = 0; i < rows.length; i += 300) {
+    busy('存起來… ' + i + ' / ' + rows.length);
+    const r = await rpc('importHistory', { rows: rows.slice(i, i + 300) }, ST.pin).catch(e => { busy(false); alert('儲存失敗：' + e.message); throw e; });
+    added += r.added; skipped += r.skipped;
+  }
+  busy(false);
+  await loadWeekly(true);
+  if ($('stWeek')) renderWeeklySettings();
+  alert('匯入好了：' + added + ' 筆' + (skipped ? '（' + skipped + ' 筆以前匯入過，跳過）' : '') + (bad.length ? '\n\n沒匯入的檔案：\n' + bad.join('\n') : ''));
+}
+
 /* ================= 設定：司機、車牌 ================= */
 function loadFleetSettings() {
   $('stFleet').innerHTML = '<div class="mut">讀取中…</div>';
@@ -1409,10 +1547,13 @@ function openPoolImport() {
 }
 /** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
 function pickFromPool() {
-  call('poolStops', {}, '讀取待分配…').then(list => {
+  call('poolStops', { trip: ST.trip.id }, '讀取待分配…').then(list => {
     if (!list.length) { toast('待分配裡沒有訂單了（辦公室在「後台」按「📥 匯入今天的訂單」）', 4500); return; }
     const pick = {}, today = ST.today;
-    sheet('<h2>📥 從待分配挑</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。</div>' +
+    list.forEach((c, i) => { if (c.mine) pick[i] = 1; });   // 我這條路線的先勾好
+    const nMine = Object.keys(pick).length;
+    sheet('<h2>📥 從待分配挑</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。' +
+      (nMine ? '<br><b>你這條路線的 ' + nMine + ' 家已經先勾好</b>，看一下，今天沒要送的取消。' : '') + '</div>' +
       '<div class="row" style="margin:10px 0"><input id="plQ" class="in grow" placeholder="🔍 找客戶、地區（例如 朴子）" autocomplete="off"><button class="btn small sec" id="plAll">全選</button><button class="btn small sec" id="plNone">全不選</button></div>' +
       '<div id="plList"></div><p><button class="btn" id="plGo" disabled>勾選要送的客戶</button></p>', (el, close) => {
       const go = el.querySelector('#plGo');
@@ -1421,7 +1562,8 @@ function pickFromPool() {
       const render = () => {
         $('plList').innerHTML = shown().map(i => { const c = list[i];
           return '<label class="prev row" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"' + (pick[i] ? ' checked' : '') + '><div class="grow"><b style="font-size:17px">' + esc(c.client || '（沒有名稱）') + '</b>' +
-            (c.date !== today ? ' <span class="badge warn">' + esc(c.date.slice(5).replace('-', '/')) + '</span>' : '') + '<div class="mut">' + esc(c.addr) + '</div>' +
+            (c.date !== today ? ' <span class="badge warn">' + esc(c.date.slice(5).replace('-', '/')) + '</span>' : '') +
+            (c.wshift ? ' <span class="badge ' + (c.wshift === '下午' ? 'warn' : 'done') + '">' + c.wshift + '線</span>' : '') + '<div class="mut">' + esc(c.addr) + '</div>' +
             '<div class="mut">' + [c.items && esc(c.items), c.qty !== '' && c.qty + ' 件', twText(c) && twTag(c), c.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　') + '</div></div></label>'; }).join('') ||
           '<div class="mut" style="text-align:center;padding:16px 0">找不到</div>';
         $('plList').querySelectorAll('[data-i]').forEach(x => x.onchange = () => { if (x.checked) pick[x.dataset.i] = 1; else delete pick[x.dataset.i]; count(); });
