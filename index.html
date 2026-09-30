@@ -147,6 +147,10 @@
   .dr-btns{display:grid;grid-template-columns:52px 1fr 1fr 1fr;gap:8px;margin-top:10px}
   .dr-btns .btn{padding:15px 4px;font-size:17px;text-align:center;text-decoration:none}
   .dr-i{border:1.5px solid #d5dde2;background:#fff;border-radius:12px;font-size:20px;color:#50606b}
+  .dr-just{display:flex;align-items:center;gap:10px;background:#e9f7ef;border:1px solid #bfe6cf;border-radius:12px;padding:8px 8px 8px 14px;margin-bottom:10px;font-size:15.5px;color:#2d6a4a;animation:drIn .25s ease}
+  .dr-just.skip{background:#fff8e1;border-color:#f5d77a;color:#8a5a00}
+  .dr-just button{flex:none;border:1px solid currentColor;background:#fff;color:inherit;border-radius:8px;padding:6px 14px;font-weight:700;font-size:15px}
+  @keyframes drIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   .btn.pause{background:#fff8e1;color:#9a5b00;border:1.5px solid #f5d77a}
   .big2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
   .big2 .btn{padding:18px 8px;font-size:19px}
@@ -1404,7 +1408,10 @@ function renderDrive() {
   const allDone = !todo.length ? '<div class="card" style="text-align:center"><div style="font-size:52px">🎉</div><h2>這趟送完了</h2><div class="mut">已送達 ' + done.length + ' 家' + (fail.length ? '，沒送成 ' + fail.length + ' 家' : '') + '</div>' +
     (fail.length ? '<p><button class="btn" onclick="carryOver()">沒送成的 ' + fail.length + ' 家移到' + nextShiftLabel(t) + '</button></p>' : '') +
     '<p><button class="btn sec" onclick="driveEnd(true)">結束，回到行程</button></p></div>' : '';
-  $('drList').innerHTML = allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
+  const j = D.just, js = j && ss.find(x => x.id === j.id);
+  const justBar = js ? '<div class="dr-just ' + j.kind + '"><span class="grow">' + (j.kind === 'done' ? '✓ <b>' + esc(js.client || js.addr) + '</b> ' + doneHm(js) + ' 已送達' : '⏸ <b>' + esc(js.client || js.addr) + '</b> 暫停，排到最後') +
+    '</span><button onclick="drUndo()">復原</button></div>' : '';
+  $('drList').innerHTML = justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
   $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAdd()">🎤 說地址插單</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
@@ -1844,13 +1851,30 @@ function driveDone(id) {
   if (!tapOk()) return;
   ST.drive.open = null;
   driveStart();
-  setStatus(s, '已送達').then(() => toast('✓ 已送達 ' + (s.client || s.addr), 6000, { label: '按錯了，復原', fn: () => setStatus(s, '待送') }));
+  setStatus(s, '已送達').then(() => drJust({ id: s.id, kind: 'done' }));
 }
 function driveSkip(id) {
   if (!tapOk()) return;
   driveStart();
-  ST.drive.skip.push(id); ST.drive.open = null; lsSet(drKey('skip'), ST.drive.skip); renderDrive();
-  toast('⏸ 暫停，排到最後', 4000, { label: '復原', fn: () => driveResume(id, true) });
+  ST.drive.skip.push(id); ST.drive.open = null; lsSet(drKey('skip'), ST.drive.skip);
+  drJust({ id, kind: 'skip' });
+}
+/**
+ * 剛按完的那一家：清單最上面留一條淡色的細條「✓ 朴子海產 08:32 已送達　復原」6 秒，
+ * 按錯可以直接復原（不跳視窗，不擋畫面），時間到自己收掉
+ */
+let drJustT;
+function drJust(j) {
+  ST.drive.just = j ? Object.assign({ at: Date.now() }, j) : null;
+  renderDrive();
+  clearTimeout(drJustT);
+  if (j) drJustT = setTimeout(() => { if (ST.drive && ST.drive.just && Date.now() - ST.drive.just.at >= 5900) { ST.drive.just = null; renderDrive(); } }, 6000);
+}
+function drUndo() {
+  const j = ST.drive && ST.drive.just, s = j && ST.stops.find(x => x.id === j.id);
+  if (!s) return;
+  ST.drive.just = null;
+  if (j.kind === 'done') setStatus(s, '待送'); else driveResume(s.id, true);
 }
 function driveResume(id, force) { if (!force && !tapOk()) return; ST.drive.skip = ST.drive.skip.filter(x => x !== id); ST.drive.open = id; lsSet(drKey('skip'), ST.drive.skip); renderDrive(); }
 
