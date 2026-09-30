@@ -207,7 +207,7 @@
 
 <!-- 後台（辦公室用：看板、報表、一次匯入訂單、車輛） -->
 <main id="vAdmin" class="hide">
-  <div class="mut" style="margin:0 4px 10px">辦公室用的功能。司機送貨用下面的「行程」「送貨」就好。</div>
+  <div class="mut" style="margin:0 4px 10px">辦公室用的功能。司機送貨用下面的「行程」「導航」就好。</div>
   <button class="adm" onclick="go({ v: 'board' })"><span class="ico">📊</span><span class="grow"><b>今日看板</b><span class="mut">每一趟送到哪裡、下一站、會晚到的、沒送成的</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可下載 CSV</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="openPoolImport()"><span class="ico">📥</span><span class="grow"><b>匯入今天的訂單</b><span class="mut">一次匯入全部，司機自己挑（待分配）</span></span><span class="mut">›</span></button>
@@ -307,7 +307,7 @@
     </div>
     <div id="routeDone" class="hide">
       <div class="card">
-        <div class="row"><span class="badge done">✓ 路線已規劃</span><span class="grow mut" id="planInfo" style="font-size:13.5px"></span><button class="btn sec small" onclick="openPlan()">重新規劃</button></div>
+        <div class="row"><span class="badge done">✓ 路線已規劃</span><span class="grow mut" id="planInfo" style="font-size:13.5px"></span><button class="btn sec small" onclick="openPlan()">路徑規劃選項</button></div>
         <div class="row" style="margin-top:12px;align-items:flex-end">
           <div><span class="sum-big" id="sumN">0</span> 點</div>
           <div class="grow legend" style="text-align:right"><span><i style="background:var(--g2)"></i><b id="sumDone">0</b> 完成</span><span><i style="background:var(--red)"></i><b id="sumFail">0</b> 沒送成</span><span><i style="background:#c9d2d8"></i><b id="sumTodo">0</b> 待送</span></div>
@@ -375,7 +375,7 @@
   <button data-t="home" onclick="tabGo('home')"><svg viewBox="0 0 24 24"><path d="M1 4h13v11H1zM14 8h4l4 4v3h-8z"/><circle cx="5.5" cy="17.5" r="2"/><circle cx="17.5" cy="17.5" r="2"/></svg>行程</button>
   <button data-t="clients" onclick="tabGo('clients')"><svg viewBox="0 0 24 24"><path d="M12 21s-7-6.1-7-11.5a7 7 0 0 1 14 0C19 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>客戶</button>
   <button data-t="map" onclick="tabGo('map')"><svg viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>地圖</button>
-  <button data-t="drive" onclick="tabGo('drive')"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8z"/></svg>送貨</button>
+  <button data-t="drive" onclick="tabGo('drive')"><svg viewBox="0 0 24 24"><path d="M3 11 21 3l-8 18-2-8z"/></svg>導航</button>
   <button data-t="admin" onclick="tabGo('admin')"><svg viewBox="0 0 24 24"><path d="M3 21h18M6 17V10M11 17V5M16 17v-8M21 17v-4"/></svg>後台</button>
   <button data-t="settings" onclick="tabGo('settings')"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>設定</button>
 </nav>
@@ -652,6 +652,7 @@ function boot() {
     busy(false);
     if (!r.pinOk) { showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
     ST.home = r.home; ST.today = r.today;
+    ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
     navReplace({ v: 'home' });
     loadHome();
   }, e => {
@@ -698,6 +699,7 @@ function renderTrips() {
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
   }
 }
+const nowHour = () => (new Date().getHours() + (ST.hourOff || 0) + 24) % 24;
 /** 這支手機是誰開的（設定裡選一次，新增行程自動帶司機和車牌） */
 const myDriver = () => lsGet('dh_me', '');
 const WD = ['日', '一', '二', '三', '四', '五', '六'];
@@ -719,7 +721,7 @@ function newTrip() {
     '<label class="f">路線</label><div id="ntWeek"></div><div id="ntRoutes"></div>' +
     '<input id="ntName" class="in" style="margin-top:8px" placeholder="或自己取名（例如：雲林線）">' +
     '<p style="margin-bottom:0"><button class="btn" id="ntGo" style="padding:16px;font-size:19px">建立</button></p>', (el, close) => {
-    let shift = new Date().getHours() < 12 ? '上午' : '下午', departTouched = false, autoName = '';
+    let shift = nowHour() < 12 ? '上午' : '下午', departTouched = false, autoName = '';
     const sum = () => {
       const dv = $('ntDate').value, dt = new Date(dv + 'T00:00:00'), drv = $('ntDriver').value.trim(), pl = $('ntPlate').value.trim();
       $('ntSum').innerHTML = '📅 ' + (dv === ST.today ? '今天 ' : '') + esc(dv.slice(5).replace('-', '/')) + '（' + WD[dt.getDay()] + '）・<b>' + shift + '</b> ' + esc($('ntDepart').value) + ' 出發<br>' +
@@ -908,16 +910,17 @@ function render() {
   const late = ss.filter(isLate);
   $('planInfo').textContent = t.plan + ' ' + t.planned.slice(5, 16);
   $('navBatchBox').innerHTML = batchBtn(null);
-  $('estWarn').innerHTML = (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') + (t.est ? '<div class="warnbox">Google 路線服務這次沒回應，公里數和時間是用直線距離估計的。等一下按「重新規劃」可以再試。</div>' : '');
+  $('estWarn').innerHTML = (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') + (t.est ? '<div class="warnbox">Google 路線服務這次沒回應，公里數和時間是用直線距離估計的。等一下按「路徑規劃選項」可以再試。</div>' : '');
   renderRoute();
 }
 
 function stopRow(s, route) {
   const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
+  // 品項明細不列（太佔高度，按 ••• 或送貨畫面看得到）；件數和公里放同一行
   const sub = [];
-  if (s.items) sub.push(esc(s.items));
-  if (s.qty !== '') sub.push(s.qty + ' 件');
-  const leg = route && s.legKm !== '' ? '<div class="sub">' + s.legKm + ' km · ' + fmtMin(s.legMin) + '</div>' : '';
+  if (route && s.legKm !== '') sub.push(s.legKm + ' km · ' + fmtMin(s.legMin));
+  if (s.qty !== '') sub.push('<b>' + s.qty + ' 件</b>');
+  const leg = '';
   const warn = s.lat === '' ? ' <button class="badge fail" onclick="editPin(\'' + s.id + '\')">找不到位置 › 放到地圖上</button>' :
     s.geo === '約略' ? ' <button class="badge warn" onclick="editPin(\'' + s.id + '\')">約略 › 修正</button>' : '';
   const tw = twTag(s, route);
@@ -1123,7 +1126,7 @@ function editStop(s) {
       }
       call('updateStop', { id: s.id, patch }, '儲存中…').then(r => {
         close(); refresh(r);
-        if (twChanged && r.trip.planned) toast('時段改了，到「路線規劃」按「重新規劃」會照新的時段排', 4000);
+        if (twChanged && r.trip.planned) toast('時段改了，到「路線規劃」按「路徑規劃選項」重排，會照新的時段', 4000);
       });
     };
   });
@@ -1394,7 +1397,7 @@ function renderDrive() {
   drClock();
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
   $('drSum').innerHTML = '<div class="dr-head"><span style="font-size:20px">📦</span><b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
-    '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">預覽路線</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">重新規劃</a></div>' +
+    '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">預覽路線</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>' +
     '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big grow">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
     '<div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
     cnt('skip', '#f5a623', paused.length, '暫停') + cnt('todo', '#c7d0d6', todo.length, '待送') + '</div></div>' +
@@ -1457,7 +1460,7 @@ function driveInfo(id) {
 }
 function driveEnd(force) {
   const left = ST.stops.filter(s => s.status === '待送').length;
-  if (!force && left && !confirm('還有 ' + left + ' 家待送，確定結束？（之後按「送貨」可以繼續）')) return;
+  if (!force && left && !confirm('還有 ' + left + ' 家待送，確定結束？（之後按下方「導航」可以繼續）')) return;
   if (!left) { lsSet(drKey('go'), null); lsSet(drKey('skip'), null); ST.drive = null; }
   // 回到行程：從行程進來的就「返回」（返回鍵不會又跑回送貨畫面）
   if (PREV && PREV.v === 'trip' && PREV.id === ST.trip.id && CUR.v === 'drive') goBack();
@@ -1630,7 +1633,7 @@ function showHelp() {
     step(1, '下方「行程」→「＋ 新增行程」', '日期、上午／下午、今天的路線都自動帶好，直接按「建立」') +
     step(2, '勾今天要送的客戶', '常叫的已經先勾好，看著紙本把<b>今天沒叫的取消</b>，按「加入」。辦公室有匯入訂單的話，按「📥 從待分配挑」') +
     step(3, '「路線規劃」→ 排好路線', '系統自動排最順的順序') +
-    step(4, '下方「送貨」開始送', '') +
+    step(4, '下方「導航」開始送', '') +
     '<h3 style="margin:18px 0 4px">送每一家都一樣，重複這三步</h3>' +
     step('①', '按「➤ 導航」', 'Google 地圖帶您開過去') +
     step('②', '到了，把貨交給客戶', '') +
