@@ -662,17 +662,52 @@ function batchBtn(first) {
 }
 
 /* ================= 開場、密碼 ================= */
+/* ================= 上次的資料（打開 App 馬上有畫面） =================
+ * 存在這支手機：首頁行程、今天幾趟的內容、司機車牌、每週路線。打開時先顯示，同時跟系統拿最新的
+ */
+const localDay = () => { const x = new Date(); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); };
+let snapT;
+function saveSnap() {
+  clearTimeout(snapT);
+  snapT = setTimeout(() => {
+    if (!ST.trips) return;
+    const keep = {};
+    ST.trips.slice(0, 12).forEach(t => { if (TRIPS[t.id]) keep[t.id] = TRIPS[t.id]; });   // 只留清單上的（舊的不佔空間）
+    lsSet('dh_snap', { home: ST.home, today: ST.today, hourOff: ST.hourOff, trips: ST.trips, TRIPS: keep, fleet: FLEET, weekly: WEEKLY });
+  }, 800);
+}
+function loadSnap() {
+  const s = lsGet('dh_snap', null);
+  if (!s || !s.trips) return false;
+  ST.home = s.home; ST.hourOff = s.hourOff || 0;
+  ST.today = s.today === localDay() ? s.today : localDay();   // 隔天打開：先用手機的日期
+  ST.trips = s.trips; Object.assign(TRIPS, s.TRIPS || {});
+  if (s.fleet) FLEET = s.fleet;
+  if (s.weekly) WEEKLY = s.weekly;
+  return true;
+}
+/** 在背景先拿今天還沒送完的幾趟（點進去就不用等） */
+function prefetchTrips() {
+  const same = (t, c) => c && c.stops.length === t.total && c.stops.filter(s => s.status === '已送達').length === t.done && c.stops.filter(s => s.status === '沒送成').length === t.fail;
+  const ids = (ST.trips || []).filter(t => t.total > t.done + t.fail && !same(t, TRIPS[t.id])).slice(0, 6).map(t => t.id);   // 沒拿過、或已經變了的
+  if (!ids.length) return;
+  call('getTrips', { ids }, false).then(list => { list.forEach(r => { if (!ST.trip || ST.trip.id !== r.trip.id) TRIPS[r.trip.id] = r; }); saveSnap(); }, () => {});   // 正在看的那一趟自己會更新
+}
 function boot() {
-  busy('連線中…');
-  rpc('hello', { pin: ST.pin }, ST.pin).then(r => {
+  const snap = loadSnap();
+  if (snap) { navReplace({ v: 'home' }); loadHome(true); } else busy('連線中…');   // 有上次的資料：先顯示，不用等
+  rpc('hello', { pin: ST.pin, trips: true }, ST.pin).then(r => {
     busy(false);
-    if (!r.pinOk) { showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
+    if (!r.pinOk) { lsSet('dh_snap', null); ST.trips = null; showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
     ST.home = r.home; ST.today = r.today;
     ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
-    navReplace({ v: 'home' });
-    loadHome();
+    ST.trips = r.trips;
+    if (!snap) navReplace({ v: 'home' });
+    if (!snap || ST.view === 'home') loadHome(true);
+    prefetchTrips(); saveSnap();
   }, e => {
     busy(false);
+    if (snap) { toast('連不上系統，先顯示上次的資料', 4000); return; }
     show('home'); $('hTitle').textContent = '送貨助手';
     $('poolBox').innerHTML = ''; $('homeWarn').innerHTML = '';
     $('tripList').innerHTML = '<div class="card" style="text-align:center"><div style="font-size:44px">📶</div><h2>連不上系統</h2><div class="mut">' + esc(e.message) + '</div><p><button class="btn" onclick="boot()">重試</button></p></div>';
@@ -686,12 +721,13 @@ function tryPin() {
 }
 
 /* ================= 首頁 ================= */
-function loadHome() {
+function loadHome(noFetch) {
   $('hTitle').textContent = '送貨助手';
   show('home');
   $('homeWarn').innerHTML = ST.home ? '' : '<div class="warnbox">還沒設定公司地址（出發點）。請按下方「設定」。</div>';
   if (ST.trips) renderTrips();   // 先用手上的，背景再拿最新的（不用每次轉圈）
-  call('listTrips', {}, ST.trips ? false : '讀取行程…').then(list => { ST.trips = list; if (ST.view === 'home') renderTrips(); });
+  if (noFetch === true) return;   // 剛打開 App：清單跟 hello 一起拿了
+  call('listTrips', {}, ST.trips ? false : '讀取行程…').then(list => { ST.trips = list; if (ST.view === 'home') renderTrips(); prefetchTrips(); saveSnap(); });
 }
 /** 待配送：還有沒送的；已完成：每一家都按過已送達或沒送成 */
 function homeTab(t) { ST.homeTab = t; renderTrips(); }
@@ -808,6 +844,7 @@ function saveHome() {
 }
 function forgetPin() {
   try { localStorage.removeItem('dh_pin'); } catch (e) {}
+  lsSet('dh_snap', null); ST.trips = null;
   ST.pin = '';
   boot();
 }
@@ -867,7 +904,7 @@ function nextShiftLabel(t) {
   return t.shift === '上午' && t.date >= today ? (t.date === today ? '今天' : t.date.slice(5).replace('-', '/')) + '下午' : '明天上午';
 }
 const TRIPS = {};   // 看過的行程先留著：切換時馬上顯示，背景再拿最新的
-function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r; }
+function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r; saveSnap(); }
 /** 手上有這一趟（剛看過）：先換過去 */
 function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r = TRIPS[id]; if (!r) return false; ST.tab = 'list'; setTrip(r); return true; }
 /** 行程被刪掉了：回首頁 */
@@ -1562,7 +1599,7 @@ const WEEKDAY = ['日', '一', '二', '三', '四', '五', '六'];
 const isWeekName = n => /^星期[一二三四五六](上午|下午)$/.test(String(n || ''));
 function loadWeekly(fresh) {
   if (WEEKLY && !fresh) return Promise.resolve(WEEKLY);
-  return call('weekly', {}, false).then(w => (WEEKLY = w));
+  return call('weekly', {}, false).then(w => { WEEKLY = w; saveSnap(); return w; });
 }
 /** 某一天（yyyy-mm-dd）上午／下午是哪一條路線；禮拜天、沒設鄉鎮的沒有 */
 function weekRoute(date, shift) {
@@ -1697,7 +1734,7 @@ function loadFleetSettings() {
   call('fleet', {}, false).then(f => { if (ST.view === 'settings') renderFleetSettings(f); else FLEET = f; });
 }
 function renderFleetSettings(f) {
-  FLEET = f;
+  FLEET = f; saveSnap();
   const me = myDriver();
   $('stMe').innerHTML = f.drivers.length ? f.drivers.map((d, i) => '<button class="chip' + (d === me ? ' on' : '') + '" data-me="' + i + '">' + esc(d) + (f.lastPlate[d] ? ' <span class="mut" style="font-size:13px">' + esc(f.lastPlate[d]) + '</span>' : '') + '</button>').join('') +
     '<button class="chip' + (!me ? ' on' : '') + '" data-me="-1">不指定（辦公室用）</button>' : '<div class="mut">先在下面加入司機</div>';
