@@ -114,10 +114,12 @@
   .pin{background:var(--blue);color:#fff;border:2px solid #fff;border-radius:50%;width:30px!important;height:30px!important;margin:-15px 0 0 -15px!important;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;box-shadow:0 1px 4px rgba(0,0,0,.4)}
   .pin.done{background:var(--g2)}.pin.fail{background:var(--red)}.pin.s{background:#2ecc71}.pin.e{background:#333}
   /* 送貨中：上面進度，下面一家一張卡，目前這家展開 */
+  #drTop:empty{display:none}
   #drTop{margin:-12px -12px 0;background:var(--g);padding:10px 14px 14px;display:flex;align-items:center;justify-content:space-between}
   .dr-pill{display:inline-flex;align-items:center;gap:8px;color:#fff;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:999px;padding:7px 16px;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums}
   .dr-pill i{width:11px;height:11px;border-radius:50%;background:#4ee49a;box-shadow:0 0 0 3px rgba(78,228,154,.25)}
-  .dr-end{color:#fff;background:none;border:1.5px solid rgba(255,255,255,.55);border-radius:999px;padding:7px 18px;font-size:16px;font-weight:700}
+  .dr-end{color:#fff;background:none;border:1.5px solid rgba(255,255,255,.55);border-radius:999px;padding:7px 16px;font-size:16px;font-weight:700;white-space:nowrap}
+  #hTitle .dr-pill{font-size:16px;padding:6px 12px;white-space:nowrap}
   #drSum{margin:0 -12px 14px;background:#fff;padding:14px 16px 14px;border-bottom:1px solid var(--line)}
   .dr-head{display:flex;align-items:center;gap:8px;padding-bottom:12px;border-bottom:1.5px dashed #dfe5e8}
   .dr-head a{color:var(--mut);text-decoration:underline;font-size:15px}
@@ -480,6 +482,7 @@ function toast(m, ms, act) {
 }
 const ROOTS = ['home', 'clients', 'admin', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
 function show(view) {
+  if (view !== 'drive') $('hRight').innerHTML = '';
   ST.view = view;
   ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vAdmin', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
   $('hBack').classList.remove('hide');
@@ -1091,6 +1094,7 @@ function askFail(s) {
       let r = b.dataset.r;
       if (r === '其他') { r = prompt('請輸入原因') || ''; if (!r) return; }
       close();
+      driveStart();
       setStatus(s, '沒送成', r);
     });
   });
@@ -1338,21 +1342,24 @@ function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else loc
 let drTimer;
 function showDrive() {
   if (!ST.drive || ST.drive.trip !== ST.trip.id) {
-    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('start'), null), f: 'all', open: null };
-    // 還有要送的才開始計時（送完的行程再打開不會重新計時）
-    if (!ST.drive.start && ST.stops.some(s => s.status === '待送')) { ST.drive.start = Date.now(); lsSet(drKey('start'), ST.drive.start); }
+    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null };
   }
   show('drive');
   renderDrive();
   clearInterval(drTimer);
   drTimer = setInterval(() => { if (ST.view === 'drive') drClock(); else clearInterval(drTimer); }, 1000);
 }
+/** 開始計時：第一次按「導航」「完成」「暫停」才算出發（只是打開來看不會開始算） */
+function driveStart() {
+  if (!ST.drive || ST.drive.start || !ST.trip || ST.drive.trip !== ST.trip.id) return;
+  ST.drive.start = Date.now(); lsSet(drKey('go'), ST.drive.start); drClock();
+}
 function drClock() {
   const el = $('drClock');
   if (!el || !ST.drive) return;
-  if (!ST.drive.start) { el.textContent = '—'; return; }
+  if (!ST.drive.start) { el.textContent = '準備出發'; return; }
   const t = Math.max(0, Math.floor((Date.now() - ST.drive.start) / 1000)), p = n => ('0' + n).slice(-2);
-  el.textContent = (t >= 3600 ? Math.floor(t / 3600) + ':' : '') + p(Math.floor(t / 60) % 60) + ':' + p(t % 60);
+  el.textContent = '配送中 · ' + (t >= 3600 ? Math.floor(t / 3600) + ':' : '') + p(Math.floor(t / 60) % 60) + ':' + p(t % 60);
 }
 const hm2m = h => { const p = String(h || '').split(':'); return p.length === 2 ? +p[0] * 60 + +p[1] : null; };
 const m2hm = m => ('0' + Math.floor(((m % 1440) + 1440) % 1440 / 60)).slice(-2) + ':' + ('0' + ((m % 60) + 60) % 60).slice(-2);
@@ -1366,7 +1373,6 @@ function drEta(s, delay) { return s.eta ? m2hm(hm2m(s.eta) + delay) : ''; }
 function renderDrive() {
   if (ST.view !== 'drive' || !ST.drive) return;
   const D = ST.drive, ss = ST.stops, t = ST.trip;
-  $('hTitle').textContent = '送貨中';
   const todo = ss.filter(s => s.status === '待送');
   D.skip = D.skip.filter(id => todo.some(s => s.id === id));
   const going = todo.filter(s => D.skip.indexOf(s.id) < 0), paused = D.skip.map(id => todo.find(s => s.id === id));
@@ -1377,7 +1383,10 @@ function renderDrive() {
   const leftKm = Math.round(todo.reduce((a, s) => a + (Number(s.legKm) || 0), 0) * 10) / 10;
   const lastTodo = todo.filter(s => s.eta).sort((a, b) => a.seq - b.seq).pop();
   const endEta = lastTodo ? m2hm(hm2m(lastTodo.eta) + delay + 10) : '';
-  $('drTop').innerHTML = '<span class="dr-pill"><i></i>配送中 · <span id="drClock"></span></span><button class="dr-end" onclick="driveEnd()">結束</button>';
+  // 上面只留一條：‹ 返回 ／ 配送中 計時 ／ 結束
+  $('hTitle').innerHTML = '<span class="dr-pill"><i></i><span id="drClock"></span></span>';
+  $('hRight').innerHTML = '<button class="dr-end" onclick="driveEnd()">結束</button>';
+  $('drTop').innerHTML = '';
   drClock();
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
   $('drSum').innerHTML = '<div class="dr-head"><span style="font-size:20px">📦</span><b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
@@ -1410,17 +1419,18 @@ function drCard(s, isCur, open, delay, paused) {
     '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + (s.geo === '約略' ? ' <span class="badge warn">約略</span>' : '') + '</div>' : '') +
     '<div class="dr-meta">' + meta + '</div></span><span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span></button>';
   if (open) {
-    h += '<div class="dr-body">' +
-      (s.items || s.qty !== '' ? '<div style="font-size:18px">📦 ' + esc(s.items) + (s.qty !== '' ? '　<b>' + s.qty + ' 件</b>' : '') + '</div>' : '') +
+    h += '<div class="dr-body">';
+    // 最常按的放最上面（不用往下滑）：ⓘ、導航、完成、暫停
+    if (st === '待送') h += '<div class="dr-btns" style="margin:0 0 10px">' + '<button class="dr-i" onclick="driveInfo(\'' + s.id + '\')" title="更多">ⓘ</button>' +
+      (s.lat !== '' ? '<a class="btn sec nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveStart()">➤ 導航</a>' : '<span class="btn sec" style="opacity:.5">沒位置</span>') +
+      '<button class="btn" onclick="driveDone(\'' + s.id + '\')">✓ 完成</button>' +
+      (paused ? '<button class="btn pause" onclick="driveResume(\'' + s.id + '\')">▶ 繼續</button>' : '<button class="btn pause" onclick="driveSkip(\'' + s.id + '\')">⏸ 暫停</button>') + '</div>';
+    h += (s.items || s.qty !== '' ? '<div style="font-size:18px">📦 ' + esc(s.items) + (s.qty !== '' ? '　<b>' + s.qty + ' 件</b>' : '') + '</div>' : '') +
       (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') +
       (s.phone ? '<div><a href="tel:' + telOf(s.phone) + '" style="font-size:17px">📞 ' + esc(s.phone) + '</a></div>' : '') +
       (s.note ? '<div class="warnbox">📝 ' + esc(s.note) + '</div>' : '') +
-      (st === '待送' && (s.lat === '' || s.geo === '約略') ? '<div class="warnbox">這家的位置' + (s.lat === '' ? '找不到' : '是約略的') + '。到了以後按這個，下次就記住：<p style="margin:8px 0 0"><button class="btn sec" onclick="pinHereFor(\'' + s.id + '\')">📍 我到了，記下這家的位置</button></p></div>' : '');
-    if (st === '待送') h += '<div class="dr-btns"><button class="dr-i" onclick="driveInfo(\'' + s.id + '\')" title="更多">ⓘ</button>' +
-      (s.lat !== '' ? '<a class="btn sec nav" target="_blank" href="' + mapsUrl(s) + '">➤ 導航</a>' : '<span class="btn sec" style="opacity:.5">沒位置</span>') +
-      '<button class="btn" onclick="driveDone(\'' + s.id + '\')">✓ 完成</button>' +
-      (paused ? '<button class="btn pause" onclick="driveResume(\'' + s.id + '\')">▶ 繼續</button>' : '<button class="btn pause" onclick="driveSkip(\'' + s.id + '\')">⏸ 暫停</button>') + '</div>';
-    else h += '<p style="margin:10px 0 0"><button class="btn sec small" onclick="setStatus(ST.stops.find(x => x.id === \'' + s.id + '\'), \'待送\')">↩ 改回待送</button></p>';
+      (st === '待送' && (s.lat === '' || s.geo === '約略') ? '<p style="margin:8px 0 0"><button class="btn sec small" onclick="pinHereFor(\'' + s.id + '\')">📍 位置' + (s.lat === '' ? '找不到' : '是約略的') + '：到了按這裡記下</button></p>' : '');
+    if (st !== '待送') h += '<p style="margin:10px 0 0"><button class="btn sec small" onclick="setStatus(ST.stops.find(x => x.id === \'' + s.id + '\'), \'待送\')">↩ 改回待送</button></p>';
     h += '</div>';
   }
   return h + '</div>';
@@ -1441,7 +1451,7 @@ function driveInfo(id) {
 function driveEnd(force) {
   const left = ST.stops.filter(s => s.status === '待送').length;
   if (!force && left && !confirm('還有 ' + left + ' 家待送，確定結束？（之後按「送貨」可以繼續）')) return;
-  if (!left) { lsSet(drKey('start'), null); lsSet(drKey('skip'), null); ST.drive = null; }
+  if (!left) { lsSet(drKey('go'), null); lsSet(drKey('skip'), null); ST.drive = null; }
   // 回到行程：從行程進來的就「返回」（返回鍵不會又跑回送貨畫面）
   if (PREV && PREV.v === 'trip' && PREV.id === ST.trip.id && CUR.v === 'drive') goBack();
   else { navReplace({ v: 'trip', id: ST.trip.id }); route({ v: 'trip', id: ST.trip.id }); }
@@ -1833,10 +1843,12 @@ function driveDone(id) {
   if (!s) { quietRefresh(); return; }
   if (!tapOk()) return;
   ST.drive.open = null;
+  driveStart();
   setStatus(s, '已送達').then(() => toast('✓ 已送達 ' + (s.client || s.addr), 6000, { label: '按錯了，復原', fn: () => setStatus(s, '待送') }));
 }
 function driveSkip(id) {
   if (!tapOk()) return;
+  driveStart();
   ST.drive.skip.push(id); ST.drive.open = null; lsSet(drKey('skip'), ST.drive.skip); renderDrive();
   toast('⏸ 暫停，排到最後', 4000, { label: '復原', fn: () => driveResume(id, true) });
 }
