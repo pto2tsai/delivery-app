@@ -915,7 +915,9 @@ function openAdd(opt) {
     // 說完：像地址就自動查；像客戶名稱就等「以前送過」的清單跳出來
     const heard = () => { if (/[路街道巷弄號村里鄉鎮市區]/.test(inA.value)) go.click(); };
     el.querySelector('#adMic').onclick = () => listen(inA, heard);
-    if (voice) setTimeout(() => listen(inA, heard), 250);
+    inA.onkeydown = e => { if (e.key === 'Enter') go.click(); };
+    if (IOS) el.querySelector('#adMic').textContent = '🎤 點框框，按鍵盤上的麥克風念';
+    if (voice) listen(inA, heard);   // 在按下去的那一刻開始（手機要求）
     go.onclick = async () => {
       const a = inA.value.trim();
       if (!a) { inA.focus(); return; }
@@ -935,7 +937,7 @@ function openAdd(opt) {
         toast(ST.trip.planned ? '已加入，插在最順路的位置' : '已加入');
       });
     };
-    if (!voice) setTimeout(() => inA.focus(), 150);
+    if (!voice) inA.focus();
   });
 }
 /**
@@ -955,10 +957,11 @@ function openVoiceBatch() {
   const items = [];
   let rec = null, listening = false;
   sheet('<h2>🎤 念紙本訂單</h2><div class="mut">一次念一家：客戶名稱＋地址，例如「朴子海產，嘉義縣朴子市大鄉里651號」。只念客戶名稱，會從以前送過的找地址。</div>' +
-    '<p><button class="btn" id="vbMic" style="padding:16px;font-size:20px">🎤 開始念</button></p>' +
-    '<div class="row"><input id="vbIn" class="in grow" placeholder="或打字（鍵盤麥克風也可以）" autocomplete="off"><button class="btn small" id="vbAdd">加入</button></div>' +
+    (srClass() ? '<p><button class="btn" id="vbMic" style="padding:16px;font-size:20px">🎤 開始念</button></p>' :
+      '<div class="warnbox" style="background:var(--gl);border-color:#9fd9bf;font-size:16px;line-height:1.7">① 按鍵盤上的 <b>🎤</b> 念一家<br>② 按「<b>加入</b>」（或鍵盤的換行）<br>③ 直接念下一家</div>') +
+    '<div class="row"><input id="vbIn" class="in grow" placeholder="' + (srClass() ? '或打字（鍵盤麥克風也可以）' : '點這裡，按鍵盤上的 🎤 念') + '" autocomplete="off" enterkeyhint="done"><button class="btn small" id="vbAdd">加入</button></div>' +
     '<div id="vbList" style="margin-top:8px"></div><p><button class="btn" id="vbGo" disabled>加入行程</button></p>', (el, close) => {
-    const mic = el.querySelector('#vbMic'), go = el.querySelector('#vbGo');
+    const mic = el.querySelector('#vbMic') || document.createElement('button'), go = el.querySelector('#vbGo');
     const alive = () => !!document.getElementById('vbList');
     const render = () => {
       if (!alive()) return;
@@ -989,23 +992,27 @@ function openVoiceBatch() {
     const heard = text => { const it = parseSpoken(text); if (!it.client && !it.addr) return; items.push(it); lookup(it); };
     const setMic = () => { mic.textContent = listening ? '🔴 聽著…（按這裡停）' : items.length ? '🎤 說下一家' : '🎤 開始念'; };
     const hear = () => {
-      const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) { toast('這支手機不能直接聽：請點下面的框，按鍵盤上的 🎤 念，再按「加入」', 5000); $('vbIn').focus(); return; }
+      const SR = srClass();
+      if (!SR) { $('vbIn').focus(); return; }
+      let got = false;
       try { rec = new SR(); } catch (e) { return; }
       rec.lang = 'zh-TW'; rec.interimResults = false; rec.maxAlternatives = 1;
-      rec.onresult = e => { if (alive()) heard(e.results[0][0].transcript); };
+      const me = rec, dog = setTimeout(() => { if (!got) { listening = false; try { me.abort(); } catch (e) {} setMic(); } }, 10000);   // 10 秒沒反應就停
+      rec.onresult = e => { got = true; if (alive()) heard(e.results[0][0].transcript); };
       rec.onerror = () => { listening = false; };
-      rec.onend = () => {   // 念完一家：自動聽下一家（手機不讓的話，按「說下一家」）
+      rec.onend = () => {   // 念完一家：有聽到才自動聽下一家；沒聽到就停下來（不會一直重試）
+        clearTimeout(dog);
         rec = null;
         if (!alive()) return;
+        if (!got) listening = false;
         if (listening) setTimeout(() => { if (listening && alive()) { try { hear(); } catch (e) { listening = false; setMic(); } } }, 300);
         setMic();
       };
-      try { rec.start(); listening = true; } catch (e) { listening = false; }
+      try { rec.start(); listening = true; } catch (e) { listening = false; clearTimeout(dog); }
       setMic();
     };
     mic.onclick = () => { if (listening) { listening = false; try { rec && rec.stop(); } catch (e) {} setMic(); } else hear(); };
-    el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; } };
+    el.querySelector('#vbAdd').onclick = () => { const v = $('vbIn').value.trim(); if (v) { heard(v); $('vbIn').value = ''; } $('vbIn').focus(); };   // 鍵盤留著，直接念下一家
     $('vbIn').onkeydown = e => { if (e.key === 'Enter') el.querySelector('#vbAdd').click(); };
     go.onclick = () => {
       listening = false; try { rec && rec.stop(); } catch (e) {}
@@ -1020,20 +1027,29 @@ function openVoiceBatch() {
       });
     };
     render();
-    setTimeout(hear, 300);
+    if (srClass()) hear(); else $('vbIn').focus();   // 在按下去的那一刻開始（手機要求）
   });
 }
-/** 語音輸入：瀏覽器支援就直接聽；不支援就請他按鍵盤上的麥克風 */
+/**
+ * 語音：
+ * - iPhone：網頁內建的語音辨識從主畫面打開時很不穩（常常不回應、畫面像當掉），
+ *   改用鍵盤上的 🎤（iPhone 自己的聽寫，很穩）：點好框框、跳出鍵盤，請他按鍵盤的麥克風念
+ * - Android：直接聽；一定要按按鈕才開始，10 秒沒反應就放棄，不會卡住
+ */
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function srClass() { return IOS ? null : window.SpeechRecognition || window.webkitSpeechRecognition || null; }
+function keyboardMic(input, msg) { input.focus(); toast(msg || '請按鍵盤上的 🎤 麥克風念，念完按「查地址」', 5000); }
 function listen(input, done) {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const fallback = () => { input.focus(); toast('這支手機不能直接聽，請按鍵盤上的 🎤 麥克風說出地址', 4500); };
-  if (!SR) { fallback(); return; }
-  let r;
-  try { r = new SR(); } catch (e) { fallback(); return; }
+  const SR = srClass();
+  if (!SR) { keyboardMic(input); return; }
+  let r, got = false;
+  try { r = new SR(); } catch (e) { keyboardMic(input); return; }
   r.lang = 'zh-TW'; r.interimResults = false; r.maxAlternatives = 1;
-  r.onresult = e => { input.value = spokenAddr(e.results[0][0].transcript); input.dispatchEvent(new Event('input')); if (done) done(); };
-  r.onerror = fallback;
-  try { r.start(); toast('🎤 請說地址或客戶名稱…', 3500); } catch (e) { fallback(); }
+  const dog = setTimeout(() => { if (!got) { try { r.abort(); } catch (e) {} keyboardMic(input, '沒聽到，可以再按一次 🎤，或按鍵盤上的麥克風'); } }, 10000);
+  r.onresult = e => { got = true; clearTimeout(dog); input.value = spokenAddr(e.results[0][0].transcript); input.dispatchEvent(new Event('input')); if (done) done(); };
+  r.onerror = () => { clearTimeout(dog); if (!got) keyboardMic(input, '沒聽到，可以再按一次 🎤，或按鍵盤上的麥克風'); };
+  r.onend = () => clearTimeout(dog);
+  try { r.start(); toast('🎤 請說地址或客戶名稱…', 3500); } catch (e) { clearTimeout(dog); keyboardMic(input); }
 }
 /** 語音常把門牌念成中文數字：二百號 → 200號 */
 function spokenAddr(s) {
