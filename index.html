@@ -143,6 +143,8 @@
 <!-- 首頁：行程列表 -->
 <main id="vHome" class="hide">
   <button class="btn" onclick="newTrip()">＋ 新增行程</button>
+  <button class="btn sec" style="margin-top:10px" onclick="openPoolImport()">📥 匯入今天的訂單（司機自己挑）</button>
+  <div id="poolBox"></div>
   <div id="homeWarn"></div>
   <div class="tabs" style="margin-top:14px"><button id="hmTodo" class="on" onclick="homeTab('todo')">待配送</button><button id="hmDone" onclick="homeTab('done')">已完成</button></div>
   <div id="tripList"></div>
@@ -186,7 +188,9 @@
       <button class="btn sec grow" onclick="go({ v: 'import', id: ST.trip.id })">📄 匯入 Excel</button>
       <button class="btn sec grow" onclick="openAdd({ voice: true })">🎤 新增地址</button>
     </div>
-    <div class="row" style="margin:-2px 0 12px">
+    <div id="poolHint" class="warnbox hide" style="background:#fff1d6">📥 這是<b>待分配</b>的訂單。司機到<b>自己的行程</b>按「📥 從待分配挑」，挑走的會從這裡搬過去，別人就看不到了。</div>
+    <button class="btn sec" id="pickPoolBtn" style="margin:-2px 0 10px" onclick="pickFromPool()">📥 從待分配挑（辦公室匯入的訂單）</button>
+    <div class="row" id="routeBtns" style="margin:-2px 0 12px">
       <button class="btn sec grow" onclick="pickFromRoute()">📋 從常用客戶挑</button>
       <button class="btn sec grow" onclick="openVoiceBatch()">🎤 念紙本訂單</button>
     </div>
@@ -244,7 +248,7 @@
       <div class="mut" style="margin:6px 0 4px">請確認每個欄位對到檔案的哪一欄（已自動猜好，猜錯可以改）</div>
       <table class="map" id="mapTbl"></table>
     </div>
-    <div class="card"><b>這趟要送哪些縣市？</b><div class="mut">不是這台車送的（寄黑貓、外縣市）取消勾選。下次會記住你的選擇。</div><div id="impCounties" class="chips"></div></div>
+    <div class="card"><b>這趟要送哪些縣市？</b><div class="mut">預設勾雲林、嘉義、台南（自己的車送）；其他縣市走委外物流，預設不勾。下次會記住你的選擇。</div><div id="impCounties" class="chips"></div></div>
     <div class="card"><b><span id="impCnt"></span></b><div id="impPrev"></div></div>
     <button class="btn" id="impGo" onclick="doGeocode()">查地址、加入行程</button>
   </div>
@@ -481,7 +485,11 @@ function loadHome() {
 /** 待配送：還有沒送的；已完成：每一家都按過已送達或沒送成 */
 function homeTab(t) { ST.homeTab = t; renderTrips(); }
 function renderTrips() {
-  const t0 = ST.homeTab || 'todo', all = ST.trips || [];
+  const pools = (ST.trips || []).filter(t => t.pool && t.total > t.done + t.fail);
+  const all = (ST.trips || []).filter(t => !t.pool), t0 = ST.homeTab || 'todo';
+  // 待分配：還有沒人挑的，放最上面提醒
+  $('poolBox').innerHTML = pools.map(t => '<button class="trip" style="border:2px solid #f5b544;margin-top:10px" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">📥 待分配 ' + esc(t.date.slice(5).replace('-', '/')) + '</b><span class="badge warn">還有 ' + (t.total - t.done - t.fail) + ' 家沒人挑</span></div>' +
+    '<div class="mut" style="margin-top:4px">司機到自己的行程按「📥 從待分配挑」</div></button>').join('');
   const isDone = t => t.total > 0 && t.done + t.fail === t.total;
   const list = all.filter(t => (t0 === 'done') === isDone(t));
   $('hmTodo').classList.toggle('on', t0 === 'todo'); $('hmDone').classList.toggle('on', t0 === 'done');
@@ -597,7 +605,7 @@ function clientMenu(i) {
 
 /* ================= 行程 ================= */
 /** 行程標題：雲林・上午 */
-const tripTitle = t => t.name + (t.shift ? '・' + t.shift : '');
+const tripTitle = t => t.name === '待分配' ? '📥 待分配 ' + t.date.slice(5).replace('-', '/') : t.name + (t.shift ? '・' + t.shift : '');
 /** 沒送完的移到哪一趟：今天（或以後）上午 → 同一天下午；其他 → 明天上午（跟後端一樣） */
 function nextShiftLabel(t) {
   const today = ST.today || new Date().toISOString().slice(0, 10);
@@ -625,6 +633,11 @@ function render() {
   const t = ST.trip, ss = ST.stops;
   if (!t) return;
   $('hTitle').textContent = tripTitle(t);
+  const isPool = t.name === '待分配';
+  $('poolHint').classList.toggle('hide', !isPool);
+  $('pickPoolBtn').classList.toggle('hide', isPool);
+  $('routeBtns').classList.toggle('hide', isPool);
+  $('tbRoute').classList.toggle('hide', isPool);
   $('startTxt').textContent = t.start || '（未設定，會用目前位置）';
   $('departTxt').textContent = t.depart + ' 出發';
   $('endTxt').textContent = endLabel(t);
@@ -820,6 +833,7 @@ function stopMenu(id) {
     (s.status !== '已送達' ? '<button class="btn sec" data-a="done">✓ 標記已送達</button>' : '') +
     (s.status !== '沒送成' ? '<button class="btn sec" data-a="fail">✗ 標記沒送成</button>' : '') +
     (s.status !== '待送' ? '<button class="btn sec" data-a="todo">↺ 改回待送</button>' : '') +
+    (s.status === '待送' && ST.trip.name !== '待分配' ? '<button class="btn sec" data-a="pool">↩ 退回待分配（讓別的司機挑）</button>' : '') +
     '<button class="btn sec" data-a="pin">📍 在地圖上修正位置</button><button class="btn sec" data-a="edit">✎ 修改（含指定時段）</button><button class="btn sec" data-a="del" style="color:var(--red)">刪除這一家</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
       const a = b.dataset.a;
@@ -829,6 +843,7 @@ function stopMenu(id) {
       else if (a === 'todo') setStatus(s, '待送');
       else if (a === 'edit') editStop(s);
       else if (a === 'pin') editPin(s.id);
+      else if (a === 'pool') call('moveStops', { ids: [s.id], toPool: true }, '退回中…').then(() => call('getTrip', { id: ST.trip.id }, false)).then(r => { refresh(r); toast('已退回待分配'); });
       else if (a === 'del' && confirm('確定刪除「' + (s.client || s.addr) + '」？')) call('deleteStop', { id: s.id }, '刪除中…').then(refresh);
     });
   });
@@ -1200,6 +1215,45 @@ function pickFromRoute(name) {
     });
   });
 }
+/* ================= 待分配（辦公室一次匯入，司機自己挑） ================= */
+function openPoolImport() {
+  call('openPool', { date: ST.today }, '準備中…').then(r => { setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id }); go({ v: 'import', id: r.trip.id }); });
+}
+/** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
+function pickFromPool() {
+  call('poolStops', {}, '讀取待分配…').then(list => {
+    if (!list.length) { toast('待分配裡沒有訂單了（辦公室在首頁按「📥 匯入今天的訂單」）', 4500); return; }
+    const pick = {}, today = ST.today;
+    sheet('<h2>📥 從待分配挑</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。</div>' +
+      '<div class="row" style="margin:10px 0"><input id="plQ" class="in grow" placeholder="🔍 找客戶、地區（例如 朴子）" autocomplete="off"><button class="btn small sec" id="plAll">全選</button><button class="btn small sec" id="plNone">全不選</button></div>' +
+      '<div id="plList"></div><p><button class="btn" id="plGo" disabled>勾選要送的客戶</button></p>', (el, close) => {
+      const go = el.querySelector('#plGo');
+      const shown = () => { const q = $('plQ').value.trim(); return list.map((c, i) => i).filter(i => !q || (list[i].client + list[i].addr + list[i].items).indexOf(q) >= 0); };
+      const count = () => { const n = Object.keys(pick).length; go.disabled = !n; go.textContent = n ? '搬到我的行程（' + n + ' 家）' : '勾選要送的客戶'; };
+      const render = () => {
+        $('plList').innerHTML = shown().map(i => { const c = list[i];
+          return '<label class="prev row" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"' + (pick[i] ? ' checked' : '') + '><div class="grow"><b style="font-size:17px">' + esc(c.client || '（沒有名稱）') + '</b>' +
+            (c.date !== today ? ' <span class="badge warn">' + esc(c.date.slice(5).replace('-', '/')) + '</span>' : '') + '<div class="mut">' + esc(c.addr) + '</div>' +
+            '<div class="mut">' + [c.items && esc(c.items), c.qty !== '' && c.qty + ' 件', twText(c) && twTag(c), c.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　') + '</div></div></label>'; }).join('') ||
+          '<div class="mut" style="text-align:center;padding:16px 0">找不到</div>';
+        $('plList').querySelectorAll('[data-i]').forEach(x => x.onchange = () => { if (x.checked) pick[x.dataset.i] = 1; else delete pick[x.dataset.i]; count(); });
+        count();
+      };
+      $('plQ').oninput = render;
+      el.querySelector('#plAll').onclick = () => { shown().forEach(i => { pick[i] = 1; }); render(); };
+      el.querySelector('#plNone').onclick = () => { Object.keys(pick).forEach(k => delete pick[k]); render(); };
+      go.onclick = () => {
+        const ids = Object.keys(pick).map(i => list[i].id);
+        call('moveStops', { ids, to: ST.trip.id }, '搬到我的行程…').then(r => {
+          close(); refresh(r);
+          if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
+          toast('已搬 ' + ids.length + ' 家到你的行程' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+        }, () => call('getTrip', { id: ST.trip.id }, false).then(refresh));   // 被別人先挑走了：重新整理
+      };
+      render();
+    });
+  });
+}
 /** 送貨時：司機覺得位置不對（不管精確或約略）→ 用現在的位置，或在地圖上拖 */
 function fixPlace(id) {
   const s = ST.stops.find(x => x.id === id);
@@ -1520,15 +1574,17 @@ function groupRows() {
     items: s.items.join('、'), note: s.notes.join('；'), phone: s.phones.join(' / '), qty: s.qty, rows: s.rows }, parseTimes(s.notes.join(' '))));
   return skipped;
 }
+/** 自己的車送的縣市；其他縣市走委外物流（預設不勾，標「委外物流」） */
+const OWN_COUNTIES = ['雲林縣', '嘉義縣', '嘉義市', '台南市'];
 function loadCounties() {
   if (IMP.counties) return IMP.counties;
   let saved = null;
-  try { saved = JSON.parse(localStorage.getItem('dh_counties') || 'null'); } catch (e) {}
+  try { saved = JSON.parse(localStorage.getItem('dh_counties2') || 'null'); } catch (e) {}
   IMP.counties = {};
-  (saved || [homeCounty(), '沒寫縣市']).forEach(c => { if (c) IMP.counties[c] = 1; });
+  (saved || OWN_COUNTIES.concat(['沒寫縣市'])).forEach(c => { if (c) IMP.counties[c] = 1; });
   return IMP.counties;
 }
-function saveCounties() { try { localStorage.setItem('dh_counties', JSON.stringify(Object.keys(IMP.counties))); } catch (e) {} }
+function saveCounties() { try { localStorage.setItem('dh_counties2', JSON.stringify(Object.keys(IMP.counties))); } catch (e) {} }
 const isPicked = i => (i in IMP.pick ? IMP.pick[i] : !!IMP.counties[IMP.groups[i].county] && !IMP.groups[i].parcel);
 function renderPreview() {
   if (IMP.map.addr == null) { $('impCnt').textContent = '請先選「地址」是哪一欄'; $('impPrev').innerHTML = ''; $('impCounties').innerHTML = ''; $('impGo').disabled = true; return; }
@@ -1557,7 +1613,7 @@ function renderPicks(skipped) {
   $('impPrev').innerHTML = idx.map(i => {
     const s = gs[i], on = isPicked(i);
     return '<label class="prev row' + (on ? '' : ' off') + '" style="align-items:flex-start"><input type="checkbox" data-p="' + i + '"' + (on ? ' checked' : '') + '><div class="grow"><b>' + esc(s.client || '') + '</b> ' + esc(s.addr) +
-      (s.parcel ? ' <span class="badge warn">寄貨運</span>' : '') +
+      (s.parcel ? ' <span class="badge warn">寄貨運</span>' : s.county !== '沒寫縣市' && OWN_COUNTIES.indexOf(s.county) < 0 ? ' <span class="badge">委外物流</span>' : '') +
       '<div class="mut">' + [s.phone && '☎ ' + esc(s.phone), s.items && esc(s.items), s.qty !== '' && s.qty + ' 件', twText(s) && twTag(s), s.note && '📝 ' + esc(s.note)].filter(Boolean).join('　') + '</div></div></label>';
   }).join('');
   $('impPrev').querySelectorAll('[data-p]').forEach(c => c.onchange = () => { IMP.pick[c.dataset.p] = c.checked; renderPicks(); });
