@@ -490,7 +490,7 @@ function renderTrips() {
   {
     $('tripList').innerHTML = list.length ? list.map(t => {
       const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0;
-      return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">' + esc(t.name) + '</b><span class="mut">' + esc(t.date) + '</span></div>' +
+      return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
         (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
@@ -501,9 +501,20 @@ function newTrip() {
   sheet('<h2>新增行程</h2><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
     '<label class="f">名稱＝路線（例如：雲林、台南線）</label><input id="ntName" class="in" placeholder="取名字，下次才能從常用路線帶客戶">' +
     '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填">' +
+    '<label class="f">班次</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
     '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
     '<p><button class="btn" id="ntGo">建立</button></p>', (el, close) => {
     // 常用路線：點一下帶入名稱，建立後直接勾今天有叫貨的客戶
+    // 班次：預設看現在幾點；切換時出發時間跟著換（自己改過的就不動）
+    let shift = new Date().getHours() < 12 ? '上午' : '下午', departTouched = false;
+    const setShift = sh => {
+      shift = sh;
+      $('ntAM').classList.toggle('on', sh === '上午'); $('ntPM').classList.toggle('on', sh === '下午');
+      if (!departTouched) $('ntDepart').value = sh === '下午' ? '13:00' : '08:00';
+    };
+    $('ntAM').onclick = () => setShift('上午'); $('ntPM').onclick = () => setShift('下午');
+    $('ntDepart').oninput = () => { departTouched = true; };
+    setShift(shift);
     let known = [];
     call('routes', {}, false).then(rs => {
       known = rs.map(r => r.name);
@@ -515,7 +526,7 @@ function newTrip() {
         $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
       });
     });
-    el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, depart: $('ntDepart').value }, '建立中…')
+    el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, depart: $('ntDepart').value, shift }, '建立中…')
       .then(r => {
         close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id });
         // 名稱是以前用過的路線（點的或自己打的）：直接跳出常用客戶讓他勾
@@ -585,9 +596,16 @@ function clientMenu(i) {
 }
 
 /* ================= 行程 ================= */
+/** 行程標題：雲林・上午 */
+const tripTitle = t => t.name + (t.shift ? '・' + t.shift : '');
+/** 沒送完的移到哪一趟：今天（或以後）上午 → 同一天下午；其他 → 明天上午（跟後端一樣） */
+function nextShiftLabel(t) {
+  const today = ST.today || new Date().toISOString().slice(0, 10);
+  return t.shift === '上午' && t.date >= today ? (t.date === today ? '今天' : t.date.slice(5).replace('-', '/')) + '下午' : '明天上午';
+}
 function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; }
 function openTrip(id, fresh) {
-  const done = () => { $('hTitle').textContent = ST.trip.name; show('trip'); tab(ST.tab); };
+  const done = () => { $('hTitle').textContent = tripTitle(ST.trip); show('trip'); tab(ST.tab); };
   if (fresh && ST.trip && ST.trip.id === id) { done(); return; }
   call('getTrip', { id }, '讀取行程…').then(r => { if (!ST.trip || ST.trip.id !== id) ST.tab = 'list'; setTrip(r); done(); });
 }
@@ -606,7 +624,7 @@ function endLabel(t) { return t.endMode === '最後一家' ? '送完最後一家
 function render() {
   const t = ST.trip, ss = ST.stops;
   if (!t) return;
-  $('hTitle').textContent = t.name;
+  $('hTitle').textContent = tripTitle(t);
   $('startTxt').textContent = t.start || '（未設定，會用目前位置）';
   $('departTxt').textContent = t.depart + ' 出發';
   $('endTxt').textContent = endLabel(t);
@@ -858,8 +876,8 @@ function tripMenu() {
   const t = ST.trip;
   const left = ST.stops.filter(s => s.status !== '已送達').length;
   sheet('<h2>' + esc(t.name) + '</h2><div style="display:grid;gap:10px">' +
-    '<button class="btn sec" data-a="rename">✎ 改名稱、日期、司機</button>' +
-    (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家複製到明天</button>' : '') +
+    '<button class="btn sec" data-a="rename">✎ 改名稱、日期、上午／下午、司機</button>' +
+    (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家移到' + nextShiftLabel(t) + '</button>' : '') +
     '<button class="btn sec" data-a="del" style="color:var(--red)">刪除這個行程</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
       close();
@@ -873,12 +891,13 @@ function tripMenu() {
 function renameTrip() {
   const t = ST.trip;
   sheet('<h2>行程資料</h2><label class="f">名稱</label><input id="rnN" class="in" value="' + esc(t.name) + '"><label class="f">日期</label><input id="rnD" class="in" type="date" value="' + esc(t.date) + '">' +
+    '<label class="f">班次</label><select id="rnS" class="in"><option' + (t.shift === '上午' ? ' selected' : '') + '>上午</option><option' + (t.shift === '下午' ? ' selected' : '') + '>下午</option></select>' +
     '<label class="f">司機</label><input id="rnR" class="in" value="' + esc(t.driver) + '"><p><button class="btn" id="rnGo">儲存</button></p>', (el, close) => {
-    el.querySelector('#rnGo').onclick = () => call('updateTrip', { id: t.id, patch: { name: $('rnN').value, date: $('rnD').value, driver: $('rnR').value } }, '儲存中…').then(r => { close(); refresh(r); });
+    el.querySelector('#rnGo').onclick = () => call('updateTrip', { id: t.id, patch: { name: $('rnN').value, date: $('rnD').value, driver: $('rnR').value, shift: $('rnS').value } }, '儲存中…').then(r => { close(); refresh(r); });
   });
 }
 function carryOver() {
-  call('carryOver', { id: ST.trip.id }, '複製中…').then(r => { setTrip(r); ST.tab = 'list'; toast('已建立新行程「' + r.trip.name + '」'); go({ v: 'trip', id: r.trip.id }); });
+  call('carryOver', { id: ST.trip.id }, '複製中…').then(r => { setTrip(r); ST.tab = 'list'; toast('已移到「' + r.trip.date.slice(5).replace('-', '/') + ' ' + tripTitle(r.trip) + '」'); go({ v: 'trip', id: r.trip.id }); });
 }
 
 /* ================= 新增地址（語音、打字、以前的客戶） ================= */
@@ -1108,11 +1127,11 @@ function renderDrive() {
   if (ST.view !== 'drive') return;
   const ss = ST.stops;
   const todo = ss.filter(s => s.status === '待送');
-  $('hTitle').textContent = ST.trip.name;
+  $('hTitle').textContent = tripTitle(ST.trip);
   if (!todo.length) {
     const fail = ss.filter(s => s.status === '沒送成');
     $('driveCard').innerHTML = '<div style="text-align:center"><div style="font-size:52px">🎉</div><h2>這趟送完了</h2><div class="mut">已送達 ' + (ss.length - fail.length) + ' 家' + (fail.length ? '，沒送成 ' + fail.length + ' 家' : '') + '</div>' +
-      (fail.length ? '<p><button class="btn" onclick="carryOver()">沒送成的 ' + fail.length + ' 家複製到明天</button></p>' : '') +
+      (fail.length ? '<p><button class="btn" onclick="carryOver()">沒送成的 ' + fail.length + ' 家移到' + nextShiftLabel(ST.trip) + '</button></p>' : '') +
       '<p><button class="btn sec" onclick="go({ v: \'trip\', id: ST.trip.id })">回到行程</button></p></div>';
     $('driveNext').innerHTML = '';
     return;
@@ -1146,11 +1165,12 @@ function renderDrive() {
  */
 function pickFromRoute(name) {
   name = (name || ST.trip.name).replace(/[（(]續[)）]/g, '').trim();
-  call('routeClients', { name, trip: ST.trip.id }, '讀取常用客戶…').then(list => {
+  const sh = ST.trip.shift;
+  call('routeClients', { name, trip: ST.trip.id, shift: sh }, '讀取常用客戶…').then(list => {
     if (!list.length) { toast('「' + name + '」以前還沒送過。先用匯入、新增地址或念訂單加客戶，下次就會出現在這裡', 5000); return; }
     const pick = {};
     const md = d => d ? d.slice(5).replace('-', '/') : '';
-    sheet('<h2>📋 ' + esc(name) + '的常用客戶</h2><div class="mut">勾今天有叫貨的。照送過的次數排。</div>' +
+    sheet('<h2>📋 ' + esc(name) + '的常用客戶</h2><div class="mut">勾今天有叫貨的。' + esc(sh) + '常送的排前面。</div>' +
       '<div class="row" style="margin:10px 0"><input id="rcQ" class="in grow" placeholder="🔍 找客戶" autocomplete="off"><button class="btn small sec" id="rcAll">全選</button><button class="btn small sec" id="rcNone">全不選</button></div>' +
       '<div id="rcList"></div><p><button class="btn" id="rcGo" disabled>加入</button></p>', (el, close) => {
       const go = el.querySelector('#rcGo');
@@ -1159,7 +1179,7 @@ function pickFromRoute(name) {
         $('rcList').innerHTML = list.map((c, i) => (q && (c.client + c.addr).indexOf(q) < 0) ? '' :
           '<label class="prev row' + (c.inTrip ? ' off' : '') + '" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"' + (pick[i] ? ' checked' : '') + (c.inTrip ? ' disabled' : '') + '>' +
           '<div class="grow"><b style="font-size:17px">' + esc(c.client || '（沒有名稱）') + '</b>' + (c.inTrip ? ' <span class="badge done">已在清單</span>' : '') +
-          '<div class="mut">' + esc(c.addr) + '</div><div class="mut">送過 ' + c.times + ' 次・上次 ' + md(c.last) + (twText(c) ? '　' + twTag(c) : '') +
+          '<div class="mut">' + esc(c.addr) + '</div><div class="mut">上午 ' + c.am + ' 次・下午 ' + c.pm + ' 次・上次 ' + md(c.last) + (twText(c) ? '　' + twTag(c) : '') +
           (c.lat === '' ? '　<span class="badge fail">沒有位置</span>' : '') + '</div></div></label>').join('');
         $('rcList').querySelectorAll('[data-i]').forEach(x => x.onchange = () => { if (x.checked) pick[x.dataset.i] = 1; else delete pick[x.dataset.i]; count(); });
         count();
@@ -1218,7 +1238,7 @@ async function ensureMap() {
 async function showMap() {
   PIN = null;
   show('map');
-  $('hTitle').textContent = ST.trip.name;
+  $('hTitle').textContent = tripTitle(ST.trip);
   $('pinBar').classList.add('hide');
   $('mapWrap').classList.remove('full');
   $('mapTitle').textContent = ST.trip.name + '　地圖';
