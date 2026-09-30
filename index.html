@@ -85,7 +85,8 @@
   .toast-act{margin-left:12px;background:#fff;color:var(--ink);border:0;border-radius:8px;padding:6px 12px;font-weight:800;font-size:15px}
   #busyX{margin-top:14px;width:auto}
   #toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(23,33,43,.92);color:#fff;padding:12px 18px;border-radius:12px;z-index:90;max-width:88vw;font-size:16px;text-align:center}
-  #busy{position:fixed;inset:0;background:rgba(255,255,255,.6);z-index:80;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;font-weight:700}
+  #busy{position:fixed;inset:0;background:rgba(255,255,255,.6);z-index:80;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;font-weight:700;transition:opacity .15s}
+  #busy.wait{opacity:0}
   .spin{width:44px;height:44px;border:5px solid #cfe9dd;border-top-color:var(--g2);border-radius:50%;animation:sp 1s linear infinite}
   @keyframes sp{to{transform:rotate(360deg)}}
   .drop{border:2.5px dashed #b9c6cf;border-radius:16px;padding:34px 16px;text-align:center;background:#f8fafb;display:block}
@@ -296,7 +297,7 @@
     <div class="card" style="padding:4px 14px">
       <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
     </div>
-    <div id="poolHint" class="warnbox hide" style="background:#fff1d6">📥 這是<b>待分配</b>的訂單。司機到<b>自己的行程</b>按「＋ 加客戶」→「辦公室匯入的訂單」，挑走的會從這裡搬過去，別人就看不到了。</div>
+    <div id="poolHint" class="tipline warn hide"><span class="grow">📥 待分配：司機自己挑，挑走的就不在這裡</span><button class="tipq" onclick="tipHelp('pool')" aria-label="說明">？</button></div>
     <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()">＋ 加客戶</button>
     <div class="card">
       <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b></div>
@@ -460,8 +461,12 @@ function call(fn, args, msg) {
   }));
 }
 let BUSY_N = 0, BUSY_MANUAL = false, busyT;
+let busyW;
 function busyShow(m) {
-  $('busyMsg').textContent = m; $('busy').classList.remove('hide');
+  const b = $('busy');
+  $('busyMsg').textContent = m;
+  if (b.classList.contains('hide')) { b.classList.add('wait'); clearTimeout(busyW); busyW = setTimeout(() => b.classList.remove('wait'), 300); }   // 很快就好的不閃一下（按鍵還是先擋住）
+  b.classList.remove('hide');
   $('busyX').classList.add('hide'); clearTimeout(busyT);
   busyT = setTimeout(() => $('busyX').classList.remove('hide'), 10000);
 }
@@ -505,6 +510,7 @@ function show(view) {
   if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
 }
 function markTab(view) {
+  if ((view === 'trip' || view === 'import') && ST.trip && ST.trip.name === '待分配') view = 'admin';   // 待分配是辦公室的事
   const t = { home: 'home', trip: 'home', import: 'home', admin: 'admin', board: 'admin', report: 'admin', clients: 'clients', map: 'map', pinedit: 'map', drive: 'drive', settings: 'settings' }[view] || '';
   $('tabbar').querySelectorAll('button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
 }
@@ -550,7 +556,7 @@ function go(state) {
 function goBack() { closeSheets(); try { history.back(); } catch (e) { route({ v: 'home' }); } }
 /** 需要行程資料的頁面：沒載入就先讀 */
 function withTrip(id, fn) {
-  if (ST.trip && ST.trip.id === id) { fn(); quietRefresh(); return; }   // 先用手上的，背景再拿最新的
+  if (useCached(id)) { fn(); call('getTrip', { id }, false).then(r => { if (ST.trip && ST.trip.id === id && !ST.reorder) refresh(r); }, e => tripGone(e, id)); return; }   // 先用手上的，背景再拿最新的
   call('getTrip', { id }, '讀取行程…').then(r => { if (CUR.id !== id) return; ST.tab = 'list'; setTrip(r); fn(); }, () => { if (CUR.id === id) backHome(); });
 }
 /** 行程不見了（被刪掉）：回首頁，返回鍵也不會再回到那一趟 */
@@ -583,10 +589,11 @@ function tabGo(t) {
     if (t === 'drive' && !ST.trip.planned) { call('getTrip', { id: ST.trip.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
     open(ST.trip); return;
   }
-  call('listTrips', {}, '找目前的行程…').then(list => {
+  call('listTrips', {}, ST.trips ? false : '找目前的行程…').then(list => {
     list = list.filter(x => !x.pool);
     const t0 = list.find(x => x.total > x.done + x.fail) || list[0];
     if (!t0) { toast('還沒有行程，先到「行程」新增一趟'); return; }
+    if (useCached(t0.id) && !(t === 'drive' && !ST.trip.planned)) { open(ST.trip); return; }
     call('getTrip', { id: t0.id }, '讀取行程…').then(r => { setTrip(r); ST.tab = 'list'; open(r.trip); });
   });
 }
@@ -793,8 +800,8 @@ function showSettings() {
   show('settings');
   $('hmAddr').value = ST.home ? ST.home.addr : '';
   loadFleetSettings();
-  $('stWeek').innerHTML = '<div class="mut">讀取中…</div>';
-  loadWeekly(true).then(renderWeeklySettings);
+  if (WEEKLY) renderWeeklySettings(); else $('stWeek').innerHTML = '<div class="mut">讀取中…</div>';   // 先用手上的，背景再拿最新的
+  loadWeekly(true).then(() => { if (ST.view === 'settings') renderWeeklySettings(); });
 }
 function saveHome() {
   call('saveHome', { addr: $('hmAddr').value }, '查地址…').then(h => { ST.home = h; toast('已儲存：' + h.addr); });
@@ -859,10 +866,15 @@ function nextShiftLabel(t) {
   const today = ST.today || new Date().toISOString().slice(0, 10);
   return t.shift === '上午' && t.date >= today ? (t.date === today ? '今天' : t.date.slice(5).replace('-', '/')) + '下午' : '明天上午';
 }
-function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; }
+const TRIPS = {};   // 看過的行程先留著：切換時馬上顯示，背景再拿最新的
+function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r; }
+/** 手上有這一趟（剛看過）：先換過去 */
+function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r = TRIPS[id]; if (!r) return false; ST.tab = 'list'; setTrip(r); return true; }
+/** 行程被刪掉了：回首頁 */
+function tripGone(e, id) { if (/找不到這個行程/.test((e && e.message) || String(e))) { delete TRIPS[id]; if (CUR.id === id) { toast('這趟已經被刪掉了'); backHome(); } } }
 function openTrip(id, fresh) {
   const done = () => { $('hTitle').textContent = tripTitle(ST.trip); show('trip'); tab(ST.tab); };
-  if (fresh && ST.trip && ST.trip.id === id) { done(); quietRefresh(); return; }   // 先用手上的，背景再拿最新的（辦公室插單也看得到）
+  if (fresh && useCached(id)) { done(); call('getTrip', { id }, false).then(r => { if (ST.trip && ST.trip.id === id && !ST.reorder) refresh(r); }, e => tripGone(e, id)); return; }   // 先用手上的，背景再拿最新的（辦公室插單也看得到）
   call('getTrip', { id }, '讀取行程…').then(r => {
     if (CUR.v !== 'trip' || CUR.id !== id) return;   // 等的時候已經換到別頁了
     if (!ST.trip || ST.trip.id !== id) ST.tab = 'list';
@@ -878,6 +890,7 @@ function tab(t) {
   render();
 }
 const TIPS = {
+  pool: ['待分配', '辦公室在「後台」匯入今天的訂單，先放在這裡。<br><br>司機到<b>自己的行程</b>按「＋ 加客戶」→「辦公室匯入的訂單」，勾要送的。挑走的會搬到他的行程，別人就看不到了。'],
   batch: ['一起導航', '把接下來的客戶一次放進 Google 地圖，照順序一站一站開。<br><br>Google 地圖一次最多 <b>10 站</b>，送完這一批再按一次，會帶下一批。'],
   noloc: ['找不到位置', 'Google 查不到這個地址，所以<b>不會排進路線</b>。<br><br>按那一家紅色的「📍 放位置」把它放到地圖上，或按 ••• 改地址。'],
   rough: ['位置不準', 'Google 只找到村、路或附近，不知道是哪一棟。<br><br>按那一家黃色的「📍 修正」，在地圖上拖到正確的地方；或到了以後按「📍 位置不準」→「我到了，用我現在的位置」。<b>下次就會記住</b>。']
@@ -909,7 +922,7 @@ function render() {
   $('stFilter').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { ST.filter = b.dataset.f; render(); });
   const shown = ST.filter === 'all' ? ss : ss.filter(s => s.status === ST.filter);
   $('stopList').innerHTML = ss.length ? (shown.length ? shown.map(s => stopRow(s, false)).join('') : '<div class="mut" style="text-align:center;padding:20px 0">沒有「' + ST.filter + '」的</div>') :
-    '<div style="text-align:center;padding:30px 0" class="mut"><div style="font-size:40px">📍</div>還沒有送貨點<br>按上面「匯入 Excel」或右下角 ＋ 新增</div>';
+    '<div style="text-align:center;padding:30px 0" class="mut"><div style="font-size:40px">📍</div>' + (isPool ? '今天還沒匯入訂單' : '還沒有客戶<br>按右下角「＋ 加客戶」') + '</div>';
 
   const todo = ss.filter(s => s.status === '待送' && s.lat !== '');
   $('pendN').textContent = todo.length;
@@ -1160,7 +1173,7 @@ function tripMenu() {
       const a = b.dataset.a;
       if (a === 'rename') renameTrip();
       else if (a === 'carry') carryOver();
-      else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { ST.trip = null; ST.trips = null; backHome(); });
+      else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { delete TRIPS[t.id]; ST.trip = null; ST.trips = null; backHome(); });
     });
   });
 }
@@ -1680,8 +1693,8 @@ function showHelp() {
 
 /* ================= 設定：司機、車牌 ================= */
 function loadFleetSettings() {
-  $('stFleet').innerHTML = '<div class="mut">讀取中…</div>';
-  call('fleet', {}, false).then(renderFleetSettings);
+  if (FLEET) renderFleetSettings(FLEET); else $('stFleet').innerHTML = '<div class="mut">讀取中…</div>';
+  call('fleet', {}, false).then(f => { if (ST.view === 'settings') renderFleetSettings(f); else FLEET = f; });
 }
 function renderFleetSettings(f) {
   FLEET = f;
@@ -1822,7 +1835,7 @@ function downloadReport() {
 
 /* ================= 待分配（辦公室一次匯入，司機自己挑） ================= */
 function openPoolImport() {
-  call('openPool', { date: ST.today }, '準備中…').then(r => { setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id }); go({ v: 'import', id: r.trip.id }); });
+  call('openPool', { date: ST.today }, '準備中…').then(r => { setTrip(r); ST.tab = 'list'; go({ v: 'import', id: r.trip.id }); });   // 返回鍵回到後台
 }
 /** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
 function pickFromPool() {
@@ -2311,8 +2324,13 @@ function finishImport() {
   call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
     IMP.skip = null;
     setTrip(r); ST.tab = 'list';
-    goBack();   // 回到行程
-    toast('已加入 ' + stops.length + ' 家，可以到「路線規劃」排路線了', 3500);
+    if (r.trip.name === '待分配') {   // 從後台來的：換成待分配清單看結果（返回鍵回後台）
+      navReplace({ v: 'trip', id: r.trip.id }); route({ v: 'trip', id: r.trip.id });
+      toast('已匯入 ' + stops.length + ' 家，司機可以自己挑了', 3500);
+    } else {
+      goBack();   // 回到行程
+      toast('已加入 ' + stops.length + ' 家，可以到「路線規劃」排路線了', 3500);
+    }
   });
 }
 
