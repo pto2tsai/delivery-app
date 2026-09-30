@@ -584,14 +584,16 @@ function tabGo(t) {
     if (t === 'drive' && !trip.planned) { ST.tab = 'route'; go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「開始導航」', 3000); return; }
     go({ v: t, id: trip.id });
   };
-  if (ST.trip && !(t === 'drive' && ST.trip.name === '待分配')) {
+  // 手上這趟：不是待分配（辦公室的）；按「導航」時還要有沒送的（送完了就找下一趟）
+  const useCur = ST.trip && ST.trip.name !== '待分配' && (t !== 'drive' || ST.stops.some(s => s.status === '待送'));
+  if (useCur) {
     // 手上的還沒排路線：先拿最新的再決定（可能辦公室剛幫他排好）
     if (t === 'drive' && !ST.trip.planned) { call('getTrip', { id: ST.trip.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
     open(ST.trip); return;
   }
   call('listTrips', {}, ST.trips ? false : '找目前的行程…').then(list => {
     list = list.filter(x => !x.pool);
-    const t0 = list.find(x => x.total > x.done + x.fail) || list[0];
+    const t0 = list.find(x => x.total > x.done + x.fail) || (ST.trip && ST.trip.name !== '待分配' ? list.find(x => x.id === ST.trip.id) : null) || list[0];   // 都送完了：留在手上這趟
     if (!t0) { toast('還沒有行程，先到「行程」新增一趟'); return; }
     if (useCached(t0.id) && !(t === 'drive' && !ST.trip.planned)) { open(ST.trip); return; }
     call('getTrip', { id: t0.id }, '讀取行程…').then(r => { setTrip(r); ST.tab = 'list'; open(r.trip); });
@@ -736,7 +738,7 @@ function renderTrips() {
   const pools = (ST.trips || []).filter(t => t.pool && t.total > t.done + t.fail);
   const all = (ST.trips || []).filter(t => !t.pool), t0 = ST.homeTab || 'todo';
   // 待分配：還有沒人挑的，放最上面提醒
-  $('poolBox').innerHTML = pools.map(t => '<button class="trip" style="border:2px solid #f5b544;margin-top:10px" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">📥 待分配 ' + esc(t.date.slice(5).replace('-', '/')) + '</b><span class="badge warn">還有 ' + (t.total - t.done - t.fail) + ' 家沒人挑</span></div>' +
+  $('poolBox').innerHTML = pools.map(t => '<button class="trip" style="border:2px solid #f5b544;margin-top:10px" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">📥 待分配 ' + esc(t.date.slice(5).replace('-', '/')) + '</b><span class="badge warn">還有 ' + (t.total - t.done - t.fail) + ' 家沒人挑</span></div>' +
     '<div class="mut" style="margin-top:4px">司機到自己的行程按「＋ 加客戶」→「辦公室匯入的訂單」</div></button>').join('');
   const isDone = t => t.total > 0 && t.done + t.fail === t.total;
   const list = all.filter(t => (t0 === 'done') === isDone(t));
@@ -746,7 +748,7 @@ function renderTrips() {
   {
     $('tripList').innerHTML = list.length ? list.map(t => {
       const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0;
-      return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
+      return '<button class="trip" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
         (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
@@ -905,6 +907,8 @@ function nextShiftLabel(t) {
   return t.shift === '上午' && t.date >= today ? (t.date === today ? '今天' : t.date.slice(5).replace('-', '/')) + '下午' : '明天上午';
 }
 const TRIPS = {};   // 看過的行程先留著：切換時馬上顯示，背景再拿最新的
+/** 從清單點一趟進去：一律先看「送貨清單」 */
+function openT(id) { ST.tab = 'list'; go({ v: 'trip', id }); }
 function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) ST.filter = 'all'; ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r; saveSnap(); }
 /** 手上有這一趟（剛看過）：先換過去 */
 function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r = TRIPS[id]; if (!r) return false; ST.tab = 'list'; setTrip(r); return true; }
@@ -1540,7 +1544,12 @@ function driveInfo(id) {
 function driveEnd(force) {
   const left = ST.stops.filter(s => s.status === '待送').length;
   if (!force && left && !confirm('還有 ' + left + ' 家待送，確定結束？（之後按下方「導航」可以繼續）')) return;
-  if (!left) { lsSet(drKey('go'), null); lsSet(drKey('skip'), null); ST.drive = null; }
+  if (!left) {   // 送完了：回到「行程」清單（下一趟從這裡點）
+    lsSet(drKey('go'), null); lsSet(drKey('skip'), null); ST.drive = null;
+    ST.homeTab = 'todo'; navReplace({ v: 'home' }); route({ v: 'home' });
+    return;
+  }
+  ST.tab = 'list';   // 還沒送完：回到這趟的送貨清單
   // 回到行程：從行程進來的就「返回」（返回鍵不會又跑回送貨畫面）
   if (PREV && PREV.v === 'trip' && PREV.id === ST.trip.id && CUR.v === 'drive') goBack();
   else { navReplace({ v: 'trip', id: ST.trip.id }); route({ v: 'trip', id: ST.trip.id }); }
@@ -1799,14 +1808,14 @@ function loadBoard(quiet) {
     const sum = k => ts.reduce((a, t) => a + t[k], 0);
     const now = new Date();
     $('bdInfo').textContent = ts.length + ' 趟　已送達 ' + sum('done') + '　沒送成 ' + sum('fail') + '　待送 ' + sum('todo') + '　（' + ('0' + now.getHours()).slice(-2) + ':' + ('0' + now.getMinutes()).slice(-2) + ' 更新，每分鐘自動更新）';
-    $('bdList').innerHTML = pool.map(t => '<button class="trip" style="border:2px solid #f5b544" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><b>📥 待分配還有 ' + t.todo + ' 家沒人挑</b></button>').join('') +
+    $('bdList').innerHTML = pool.map(t => '<button class="trip" style="border:2px solid #f5b544" onclick="openT(\'' + t.id + '\')"><b>📥 待分配還有 ' + t.todo + ' 家沒人挑</b></button>').join('') +
       (ts.length ? ts.map(t => {
         const pd = t.total ? t.done / t.total * 100 : 0, pf = t.total ? t.fail / t.total * 100 : 0;
         const late = t.delay == null ? '' : t.delay > 5 ? '<b style="color:var(--red)">比預計晚 ' + fmtMin(t.delay) + '</b>' : t.delay < -5 ? '<b style="color:var(--g)">比預計早 ' + fmtMin(-t.delay) + '</b>' : '<b style="color:var(--g)">照預計</b>';
         const tl = t.stops.map(s => '<div class="row" style="padding:5px 0;border-bottom:1px solid #eef1f3"><span class="mut" style="width:26px">' + s.seq + '</span>' +
           '<span style="width:76px;white-space:nowrap;font-weight:700;color:' + (s.status === '已送達' ? 'var(--g)' : s.status === '沒送成' ? 'var(--red)' : '#99a3ab') + '">' + (s.status === '已送達' ? '✓ ' + esc(s.at) : s.status === '沒送成' ? '✗ ' + esc(s.at) : '待送') + '</span>' +
           '<span class="grow">' + esc(s.client) + (s.status === '沒送成' && s.reason ? '<span class="mut">（' + esc(s.reason) + '）</span>' : '') + '</span><span class="mut" style="font-size:14px">' + (s.eta ? '預計 ' + esc(s.eta) : '') + '</span></div>').join('');
-        return '<div class="trip bd"><div class="row" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
+        return '<div class="trip bd"><div class="row" onclick="openT(\'' + t.id + '\')"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
           '<span class="mut">' + (t.driver ? '司機 ' + esc(t.driver) : '沒填司機') + (t.plate ? ' ' + plateTag(t.plate) : '') + '</span></div>' +
           '<div class="bar" style="display:flex"><i style="width:' + pd + '%"></i><i style="width:' + pf + '%;background:var(--red)"></i></div>' +
           '<div style="margin-top:6px">✓ ' + t.done + '　<span style="color:var(--red)">✗ ' + t.fail + '</span>　待送 ' + t.todo + '　<span class="mut">共 ' + t.total + ' 家' + (t.km !== '' ? '・' + t.km + ' km' : '') + '</span></div>' +
