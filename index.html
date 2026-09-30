@@ -528,6 +528,7 @@ document.addEventListener('visibilitychange', () => {
 /** 換到某一頁（記下上一頁） */
 let PREV = null;   // 上一頁（結束送貨時回去用）
 function go(state) {
+  if (NAV_IGNORE > 0) { setTimeout(() => go(state), 30); return; }   // 小視窗剛關、那一筆「上一頁」還沒收完：等一下再換頁（返回鍵才會回到對的地方）
   PREV = CUR;
   closeSheets();
   if (sheetCloseT) { clearTimeout(sheetCloseT); sheetCloseT = null; }
@@ -866,7 +867,7 @@ function tab(t) {
 const TIPS = {
   batch: ['一起導航', '把接下來的客戶一次放進 Google 地圖，照順序一站一站開。<br><br>Google 地圖一次最多 <b>10 站</b>，送完這一批再按一次，會帶下一批。'],
   noloc: ['找不到位置', 'Google 查不到這個地址，所以<b>不會排進路線</b>。<br><br>按那一家紅色的「📍 放位置」把它放到地圖上，或按 ••• 改地址。'],
-  rough: ['位置不準', 'Google 只找到村、路或附近，不知道是哪一棟。<br><br>按那一家黃色的「📍 修正」，在地圖上拖到正確的地方；或到了以後按「📍 到了按這裡記下」。<b>下次就會記住</b>。']
+  rough: ['位置不準', 'Google 只找到村、路或附近，不知道是哪一棟。<br><br>按那一家黃色的「📍 修正」，在地圖上拖到正確的地方；或到了以後按「📍 位置不準」→「我到了，用我現在的位置」。<b>下次就會記住</b>。']
 };
 function tipHelp(k) { const t = TIPS[k]; sheet('<h2>' + t[0] + '</h2><div style="font-size:17px;line-height:1.7">' + t[1] + '</div><p><button class="btn" id="tipOk">知道了</button></p>', (el, close) => { el.querySelector('#tipOk').onclick = close; }); }
 function refresh(r) { setTrip(r); render(); if (ST.view === 'drive') renderDrive(); }
@@ -1177,17 +1178,17 @@ function addMenu() {
   const item = (k, ico, title, sub) => '<button class="adm" data-add="' + k + '"><span class="ico">' + ico + '</span><span class="grow"><b>' + title + '</b><span class="mut">' + sub + '</span></span><span class="mut">›</span></button>';
   sheet('<h2>加客戶</h2>' +
     (isPool ? '' : item('route', '📋', '常用客戶', '這條路線常叫的已經先勾好，看著紙本取消沒叫的')) +
-    (isPool ? '' : item('pool', '📥', '辦公室匯入的訂單', '從待分配挑' + (pool ? '（還有 ' + pool + ' 家沒人挑）' : ''))) +
     item('voice', '🎤', '說或打字', '一家或好幾家都可以，也可以只說客戶名稱') +
-    item('excel', '📄', '匯入 Excel', 'ERP 匯出的訂單檔'), (el, close) => {
+    // Excel 由辦公室在「後台」匯入；司機這裡只從辦公室匯入的挑（待分配自己那一頁才有匯入）
+    item('orders', '📥', isPool ? '匯入 Excel' : '辦公室匯入的訂單', isPool ? '選 ERP 匯出的檔案' : pool ? '還有 ' + pool + ' 家沒人挑，勾你要送的' : '從待分配挑'), (el, close) => {
     el.querySelectorAll('[data-add]').forEach(b => b.onclick = () => {
       const k = b.dataset.add;
       close();
       // 馬上開下一步（鍵盤才會跳出來；返回鍵也會直接回到行程）
       if (k === 'route') pickFromRoute();
-      else if (k === 'pool') pickFromPool();
       else if (k === 'voice') openAddStops();
-      else go({ v: 'import', id: ST.trip.id });
+      else if (isPool) go({ v: 'import', id: ST.trip.id });
+      else pickFromPool();
     });
   });
 }
@@ -1416,12 +1417,15 @@ function renderDrive() {
 function drCard(s, isCur, open, delay, paused) {
   const st = s.status, eta = st === '待送' ? drEta(s, delay) : '';
   const late = eta && s.close && eta > s.close;
+  // 位置有問題：地址旁邊一個可以按的標籤（用現在的位置／在地圖上拖），不另外多一顆大按鈕
+  const fixTag = st === '待送' && (s.lat === '' || s.geo === '約略') ? ' <span class="badge ' + (s.lat === '' ? 'fail' : 'warn') + ' fixpin" onclick="event.stopPropagation();fixPlace(\'' + s.id + '\')">📍 ' + (s.lat === '' ? '找不到位置' : '位置不準') + '</span>'
+    : s.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : '';
   const no = st === '已送達' ? '<span class="dr-no ok">✓</span>' : st === '沒送成' ? '<span class="dr-no ng">✗</span>' : '<span class="dr-no' + (paused ? ' ps' : '') + '">' + s.seq + '</span>';
   const meta = st === '待送'
     ? [s.legKm !== '' && s.legKm + ' km · ' + fmtMin(s.legMin), eta && '<b' + (late ? ' class="late"' : '') + '>預計 ' + eta + '</b>', twText(s) && twTag(s), paused && '<span class="badge warn">暫停</span>', s.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　')
     : (st === '已送達' ? '<b>✓ ' + doneHm(s) + ' 送達</b>' : '<b class="late">✗ ' + doneHm(s) + ' 沒送成' + (s.reason ? '（' + esc(s.reason) + '）' : '') + '</b>');
   let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + '"><button class="dr-row" data-open="' + s.id + '">' + no +
-    '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + (s.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : '') + '</div>' : '') +
+    '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + fixTag + '</div>' : fixTag) +
     '<div class="dr-meta">' + meta + '</div></span><span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span></button>';
   if (open) {
     h += '<div class="dr-body">';
@@ -1433,8 +1437,7 @@ function drCard(s, isCur, open, delay, paused) {
     h += (s.items || s.qty !== '' ? '<div style="font-size:18px">📦 ' + esc(s.items) + (s.qty !== '' ? '　<b>' + s.qty + ' 件</b>' : '') + '</div>' : '') +
       (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') +
       (s.phone ? '<div><a href="tel:' + telOf(s.phone) + '" style="font-size:17px">📞 ' + esc(s.phone) + '</a></div>' : '') +
-      (s.note ? '<div class="warnbox">📝 ' + esc(s.note) + '</div>' : '') +
-      (st === '待送' && (s.lat === '' || s.geo === '約略') ? '<p style="margin:8px 0 0"><button class="btn sec small" onclick="pinHereFor(\'' + s.id + '\')">📍 位置' + (s.lat === '' ? '找不到' : '不準') + '：到了按這裡記下</button></p>' : '');
+      (s.note ? '<div class="warnbox">📝 ' + esc(s.note) + '</div>' : '');
     if (st !== '待送') h += '<p style="margin:10px 0 0"><button class="btn sec small" onclick="setStatus(ST.stops.find(x => x.id === \'' + s.id + '\'), \'待送\')">↩ 改回待送</button></p>';
     h += '</div>';
   }
@@ -1794,11 +1797,11 @@ function openPoolImport() {
 /** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
 function pickFromPool() {
   call('poolStops', { trip: ST.trip.id }, '讀取待分配…').then(list => {
-    if (!list.length) { toast('待分配裡沒有訂單了（辦公室在「後台」按「📥 匯入今天的訂單」）', 4500); return; }
+    if (!list.length) { toast('辦公室還沒匯入訂單（辦公室在「後台」按「📥 匯入今天的訂單」）', 4500); return; }
     const pick = {}, today = ST.today;
     list.forEach((c, i) => { if (c.mine) pick[i] = 1; });   // 我這條路線的先勾好
     const nMine = Object.keys(pick).length;
-    sheet('<h2>📥 從待分配挑</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。' +
+    sheet('<h2>📥 辦公室匯入的訂單</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。' +
       (nMine ? '<br><b>你這條路線的 ' + nMine + ' 家已經先勾好</b>，看一下，今天沒要送的取消。' : '') + '</div>' +
       '<div class="row" style="margin:10px 0"><input id="plQ" class="in grow" placeholder="🔍 找客戶、地區（例如 朴子）" autocomplete="off"><button class="btn small sec" id="plAll">全選</button><button class="btn small sec" id="plNone">全不選</button></div>' +
       '<div id="plList"></div><p><button class="btn" id="plGo" disabled>勾選要送的客戶</button></p>', (el, close) => {
