@@ -68,9 +68,14 @@
   .fab{position:fixed;right:18px;bottom:calc(84px + env(safe-area-inset-bottom));width:64px;height:64px;border-radius:50%;background:var(--g);color:#fff;border:0;font-size:36px;box-shadow:0 4px 12px rgba(0,0,0,.25);z-index:30}
   .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:50;display:flex;align-items:flex-end;justify-content:center}
   .sheet{background:#fff;width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:20px 20px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom))}
-  .sheet h2{margin:0 0 12px;font-size:20px}
+  .sheet h2{margin:0 0 12px;font-size:20px;padding-right:44px}
+  .sheet-x-wrap{position:sticky;top:0;height:0;z-index:3}
+  .sheet-x{position:absolute;right:-6px;top:-8px;width:44px;height:44px;border:0;border-radius:50%;background:#eef1f3;font-size:20px;color:#50606b}
+  .nt-sum{display:flex;gap:10px;align-items:center;background:#f4f7f8;border-radius:14px;padding:12px 14px;font-size:16px;line-height:1.6}
+  .nt-sum button{flex:none;border:1.5px solid #cfd8de;background:#fff;border-radius:10px;padding:8px 14px;font-weight:700}
   label.f{display:block;margin:12px 0 5px;font-weight:600;font-size:15px;color:#3b4852}
   .in{width:100%;border:1.5px solid #cfd8de;border-radius:12px;padding:12px;background:#fff}
+  input[type=date].in,input[type=time].in{-webkit-appearance:none;appearance:none;min-width:0;max-width:100%;display:block;text-align:left;min-height:48px}
   .in:focus{outline:none;border-color:var(--g2)}
   .opt{display:flex;gap:12px;align-items:flex-start;padding:10px 0;font-size:17px}
   .opt input{width:22px;height:22px;margin:2px 0 0;accent-color:var(--g)}
@@ -226,6 +231,10 @@
     <b style="font-size:18px">公司地址</b><div class="mut">新行程的預設出發點</div>
     <input id="hmAddr" class="in" style="margin-top:8px" placeholder="例如：嘉義縣布袋鎮○○路○號">
     <p style="margin-bottom:0"><button class="btn" id="hmGo" onclick="saveHome()">儲存</button></p>
+  </div>
+  <div class="card">
+    <b style="font-size:18px">📱 這支手機是誰開的？</b><div class="mut">選一次就好，新增行程會自動帶司機和車牌</div>
+    <div id="stMe" class="chips"></div>
   </div>
   <div class="card">
     <b style="font-size:18px">🚚 司機、車牌</b><div class="mut">新增行程時點一下就好；選了司機自動帶他的車</div>
@@ -574,7 +583,7 @@ let SHEET_ENTRY = false, sheetCloseT = null, NAV_IGNORE = 0;
 function sheet(html, onReady, opt) {
   const bg = document.createElement('div');
   bg.className = 'sheet-bg';
-  bg.innerHTML = '<div class="sheet">' + html + '</div>';
+  bg.innerHTML = '<div class="sheet"><div class="sheet-x-wrap"><button class="sheet-x" aria-label="關閉" title="關閉">✕</button></div>' + html + '</div>';
   $('sheetHost').appendChild(bg);
   if (sheetCloseT) { clearTimeout(sheetCloseT); sheetCloseT = null; }   // 關一個、開下一個：沿用同一筆
   else if (!SHEET_ENTRY) { navPush(Object.assign({}, CUR, { sheet: 1 })); SHEET_ENTRY = true; }
@@ -587,7 +596,9 @@ function sheet(html, onReady, opt) {
     }, 0);
   };
   if (opt && opt.dirty) { bg._dirty = opt.dirty; bg._dirtyMsg = opt.msg; }
-  bg.addEventListener('click', e => { if (e.target === bg && !(bg._dirty && bg._dirty() && !confirm(bg._dirtyMsg || '還沒存，確定不要了？'))) close(); });
+  const tryClose = () => { if (!(bg._dirty && bg._dirty() && !confirm(bg._dirtyMsg || '還沒存，確定不要了？'))) close(); };
+  bg.addEventListener('click', e => { if (e.target === bg) tryClose(); });
+  bg.querySelector('.sheet-x').onclick = tryClose;   // 右上角 ✕：每個小視窗都關得掉
   if (onReady) onReady(bg.querySelector('.sheet'), close);
   return close;
 }
@@ -680,18 +691,34 @@ function renderTrips() {
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
   }
 }
+/** 這支手機是誰開的（設定裡選一次，新增行程自動帶司機和車牌） */
+const myDriver = () => lsGet('dh_me', '');
+const WD = ['日', '一', '二', '三', '四', '五', '六'];
+/**
+ * 新增行程：能自動的都自動（今天、現在是上午還是下午、出發時間、這支手機的司機和車牌、今天的每週路線），
+ * 打開直接按「建立」就好；要改才按「改」
+ */
 function newTrip() {
   const d = ST.today || new Date().toISOString().slice(0, 10);
-  sheet('<h2>新增行程</h2><div id="ntWeek"></div><div id="ntRoutes"></div><label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
-    '<label class="f">名稱＝路線（例如：雲林、台南線）</label><input id="ntName" class="in" placeholder="取名字，下次才能從常用路線帶客戶">' +
-    '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填" list="dlDrivers" autocomplete="off">' +
-    '<label class="f">車牌</label><input id="ntPlate" class="in" placeholder="例如：ABC-1234（可以不填）" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="ntPlates"></div>' +
-    '<label class="f">班次</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
-    '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
-    '<p><button class="btn" id="ntGo">建立</button></p>', (el, close) => {
-    // 常用路線：點一下帶入名稱，建立後直接勾今天有叫貨的客戶
-    // 班次：預設看現在幾點；切換時出發時間跟著換（自己改過的就不動）
-    let shift = new Date().getHours() < 12 ? '上午' : '下午', departTouched = false;
+  sheet('<h2>新增行程</h2>' +
+    '<div class="nt-sum"><div class="grow" id="ntSum"></div><button type="button" id="ntMoreBtn">改</button></div>' +
+    '<div id="ntMore" class="hide">' +
+      '<label class="f">日期</label><input id="ntDate" class="in" type="date" value="' + d + '">' +
+      '<label class="f">班次</label><div class="tabs" style="margin:0"><button type="button" id="ntAM">上午</button><button type="button" id="ntPM">下午</button></div>' +
+      '<label class="f">出發時間</label><input id="ntDepart" class="in" type="time" value="08:00">' +
+      '<label class="f">司機</label><input id="ntDriver" class="in" placeholder="可以不填" list="dlDrivers" autocomplete="off">' +
+      '<label class="f">車牌</label><input id="ntPlate" class="in" placeholder="例如：ABC-1234" list="dlPlates" autocomplete="off" autocapitalize="characters"><div id="ntPlates"></div>' +
+    '</div>' +
+    '<label class="f">路線</label><div id="ntWeek"></div><div id="ntRoutes"></div>' +
+    '<input id="ntName" class="in" style="margin-top:8px" placeholder="或自己取名（例如：雲林線）">' +
+    '<p style="margin-bottom:0"><button class="btn" id="ntGo" style="padding:16px;font-size:19px">建立</button></p>', (el, close) => {
+    let shift = new Date().getHours() < 12 ? '上午' : '下午', departTouched = false, autoName = '';
+    const sum = () => {
+      const dv = $('ntDate').value, dt = new Date(dv + 'T00:00:00'), drv = $('ntDriver').value.trim(), pl = $('ntPlate').value.trim();
+      $('ntSum').innerHTML = '📅 ' + (dv === ST.today ? '今天 ' : '') + esc(dv.slice(5).replace('-', '/')) + '（' + WD[dt.getDay()] + '）・<b>' + shift + '</b> ' + esc($('ntDepart').value) + ' 出發<br>' +
+        (drv ? '🚚 ' + esc(drv) + (pl ? ' ' + plateTag(pl) : '') : '<span class="mut">🚚 沒指定司機（可以到「設定」選這支手機是誰開的）</span>');
+      $('ntGo').textContent = '建立' + ($('ntName').value.trim() ? '「' + $('ntName').value.trim() + '」' : '');
+    };
     const setShift = sh => {
       shift = sh;
       $('ntAM').classList.toggle('on', sh === '上午'); $('ntPM').classList.toggle('on', sh === '下午');
@@ -699,37 +726,42 @@ function newTrip() {
       showWeek();
     };
     // 每週路線：照日期是星期幾、上午／下午，自動帶路線名稱（自己打過名稱就不動）
-    let autoName = '';
     const showWeek = () => {
       const r = WEEKLY && weekRoute($('ntDate').value, shift);
       const box = $('ntWeek');
       if (!box) return;
-      if (!r) { box.innerHTML = ''; if ($('ntName').value === autoName) $('ntName').value = autoName = ''; return; }
-      box.innerHTML = '<b>📅 今天的路線</b><div class="chips"><button class="chip' + ($('ntName').value === r.name ? ' on' : '') + '" id="ntWk">' + esc(r.name) + '：' + esc(r.inc.join('・')) + '</button></div>';
+      if (!r) { box.innerHTML = ''; if ($('ntName').value === autoName) $('ntName').value = autoName = ''; sum(); return; }
+      box.innerHTML = '<div class="chips" style="margin-top:0"><button type="button" class="chip' + ($('ntName').value === r.name ? ' on' : '') + '" id="ntWk" style="text-align:left">📅 ' + esc(r.name) + '：' + esc(r.inc.join('・')) + '</button></div>';
       if (!$('ntName').value || $('ntName').value === autoName) { $('ntName').value = autoName = r.name; $('ntWk').classList.add('on'); }
-      $('ntWk').onclick = () => { $('ntName').value = autoName = r.name; $('ntWk').classList.add('on'); $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.remove('on')); };
+      $('ntWk').onclick = () => { $('ntName').value = autoName = r.name; $('ntWk').classList.add('on'); $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.remove('on')); sum(); };
+      sum();
     };
+    $('ntMoreBtn').onclick = () => { $('ntMore').classList.toggle('hide'); $('ntMoreBtn').textContent = $('ntMore').classList.contains('hide') ? '改' : '收起'; };
     $('ntDate').onchange = showWeek;
-    loadWeekly().then(showWeek);
+    ['ntDepart', 'ntDriver', 'ntPlate', 'ntName'].forEach(k => $(k).addEventListener('input', sum));
     $('ntAM').onclick = () => setShift('上午'); $('ntPM').onclick = () => setShift('下午');
-    $('ntDepart').oninput = () => { departTouched = true; };
+    $('ntDepart').oninput = () => { departTouched = true; sum(); };
+    $('ntDriver').value = myDriver();
+    fleetPick($('ntDriver'), $('ntPlate'), $('ntPlates'), false, sum);
     setShift(shift);
-    fleetPick($('ntDriver'), $('ntPlate'), $('ntPlates'));
+    loadWeekly().then(showWeek);
     let known = [];
     call('routes', {}, false).then(rs => {
       known = rs.map(r => r.name);
       rs = rs.filter(r => !isWeekName(r.name));
       if (!rs.length || !$('ntRoutes')) return;
-      $('ntRoutes').innerHTML = '<b>常用路線</b><div class="mut">點一下，建立後勾今天有叫貨的客戶就好</div><div class="chips">' +
-        rs.slice(0, 12).map((r, i) => '<button class="chip" data-r="' + i + '">' + esc(r.name) + ' <span class="mut" style="font-size:13px">' + r.trips + ' 趟</span></button>').join('') + '</div>';
+      $('ntRoutes').innerHTML = '<div class="chips">' +
+        rs.slice(0, 12).map((r, i) => '<button type="button" class="chip" data-r="' + i + '">' + esc(r.name) + ' <span class="mut" style="font-size:13px">' + r.trips + ' 趟</span></button>').join('') + '</div>';
       $('ntRoutes').querySelectorAll('[data-r]').forEach(b => b.onclick = () => {
         $('ntName').value = rs[+b.dataset.r].name;
         $('ntRoutes').querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === b));
-        if ($('ntWk')) $('ntWk').classList.toggle('on', $('ntName').value === $('ntWk').textContent.split('：')[0]);
+        if ($('ntWk')) $('ntWk').classList.remove('on');
+        sum();
       });
     });
     el.querySelector('#ntGo').onclick = () => call('createTrip', { date: $('ntDate').value, name: $('ntName').value, driver: $('ntDriver').value, plate: $('ntPlate').value, depart: $('ntDepart').value, shift }, '建立中…')
       .then(r => {
+        if (r.trip.driver && !myDriver()) lsSet('dh_me', r.trip.driver);   // 第一次填了司機：記住這支手機是他的
         close(); setTrip(r); ST.tab = 'list'; go({ v: 'trip', id: r.trip.id });
         // 名稱是以前用過的路線（點的或自己打的）：直接跳出常用客戶讓他勾
         if (known.indexOf(r.trip.name) >= 0 || isWeekName(r.trip.name)) setTimeout(() => pickFromRoute(r.trip.name), 50);
@@ -1577,7 +1609,8 @@ function showHelp() {
   const row = (a, b) => '<tr><td style="padding:8px 6px;vertical-align:top">' + a + '</td><td style="padding:8px 6px;vertical-align:top"><b>' + b + '</b></td></tr>';
   sheet('<h2>📖 司機使用說明</h2>' +
     '<h3 style="margin:14px 0 4px">出發前</h3>' +
-    step(1, '下方「行程」→「＋ 新增行程」', '路線名稱會自動帶今天的路線（例如星期一上午），按「建立」') +
+    step(0, '第一次用：「設定」→ 選這支手機是誰開的', '之後司機、車牌都會自動帶') +
+    step(1, '下方「行程」→「＋ 新增行程」', '日期、上午／下午、今天的路線都自動帶好，直接按「建立」') +
     step(2, '勾今天要送的客戶', '常叫的已經先勾好，看著紙本把<b>今天沒叫的取消</b>，按「加入」。辦公室有匯入訂單的話，按「📥 從待分配挑」') +
     step(3, '「路線規劃」→ 排好路線', '系統自動排最順的順序') +
     step(4, '下方「送貨」開始送', '') +
@@ -1604,6 +1637,10 @@ function loadFleetSettings() {
 }
 function renderFleetSettings(f) {
   FLEET = f;
+  const me = myDriver();
+  $('stMe').innerHTML = f.drivers.length ? f.drivers.map((d, i) => '<button class="chip' + (d === me ? ' on' : '') + '" data-me="' + i + '">' + esc(d) + (f.lastPlate[d] ? ' <span class="mut" style="font-size:13px">' + esc(f.lastPlate[d]) + '</span>' : '') + '</button>').join('') +
+    '<button class="chip' + (!me ? ' on' : '') + '" data-me="-1">不指定（辦公室用）</button>' : '<div class="mut">先在下面加入司機</div>';
+  $('stMe').querySelectorAll('[data-me]').forEach(b => b.onclick = () => { const i = +b.dataset.me; lsSet('dh_me', i < 0 ? null : f.drivers[i]); renderFleetSettings(f); toast(i < 0 ? '這支手機不指定司機' : '這支手機是 ' + f.drivers[i] + ' 的'); });
   const extra = f.drivers.filter(d => !f.saved.some(x => x.name === d));   // 行程裡填過、還沒加進來的
   $('stFleet').innerHTML = (f.saved.length ? f.saved.map((x, i) => '<div class="row fleet" style="padding:8px 0;border-bottom:1px solid #eef1f3"><b class="grow" style="font-size:18px">' + esc(x.name) + '</b>' +
     (x.plate ? plateTag(x.plate) : '<span class="mut">沒填車牌</span>') + '<button class="btn small sec" data-e="' + i + '">改</button><button class="btn small sec" style="color:var(--red)" data-d="' + i + '">刪</button></div>').join('')
@@ -1625,17 +1662,18 @@ function fleetAdd() {
 }
 /** 司機、車牌：用過的做成下拉選單＋車牌快捷鍵；選了司機自動帶他上次開的車（自己打過車牌就不動） */
 let FLEET = null;
-function fleetPick(drv, plt, box, keep) {
+function fleetPick(drv, plt, box, keep, onChange) {
   let touched = !!(keep && plt.value);
   plt.addEventListener('input', () => { touched = true; });
-  const auto = () => { const p = FLEET && FLEET.lastPlate[drv.value.trim()]; if (p && !touched) plt.value = p; };
+  const auto = () => { const p = FLEET && FLEET.lastPlate[drv.value.trim()]; if (p && !touched) plt.value = p; if (onChange) onChange(); };
   drv.addEventListener('input', auto); drv.addEventListener('change', auto);
   const fill = f => {
     FLEET = f;
     const opts = a => a.map(x => '<option value="' + esc(x) + '">').join('');
     $('dlDrivers').innerHTML = opts(f.drivers); $('dlPlates').innerHTML = opts(f.plates);
     if (box) box.innerHTML = f.plates.length ? '<div class="chips">' + f.plates.slice(0, 8).map((p, i) => '<button type="button" class="chip" data-p="' + i + '">' + esc(p) + '</button>').join('') + '</div>' : '';
-    if (box) box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { plt.value = f.plates[+b.dataset.p]; touched = true; });
+    if (box) box.querySelectorAll('[data-p]').forEach(b => b.onclick = () => { plt.value = f.plates[+b.dataset.p]; touched = true; if (onChange) onChange(); });
+    if (drv.value.trim()) auto();   // 已經帶了司機（這支手機的）：車牌也帶
   };
   if (FLEET) fill(FLEET);
   call('fleet', {}, false).then(f => { if (document.body.contains(plt)) fill(f); });
