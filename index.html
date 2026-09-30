@@ -96,6 +96,8 @@
   #tabbar button.on{color:var(--g)}
   .adm{display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:#fff;border:1px solid #e1e6ea;border-radius:14px;padding:14px;margin-bottom:10px;font:inherit;color:inherit}
   .adm .ico{font-size:30px}
+  .trip.bd{cursor:default}
+  .trip.bd > .row{cursor:pointer}
   .adm b{display:block;font-size:19px}
   .plate{display:inline-block;border:2px solid #333;border-radius:5px;padding:0 5px;font-weight:800;font-size:14px;letter-spacing:.5px;background:#fff;color:#222;line-height:1.35}
   #tabbar button.on svg{stroke-width:2.4}
@@ -166,7 +168,6 @@
   <button class="adm" onclick="go({ v: 'board' })"><span class="ico">📊</span><span class="grow"><b>今日看板</b><span class="mut">每一趟送到哪裡、下一站、會晚到的、沒送成的</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可下載 CSV</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="openPoolImport()"><span class="ico">📥</span><span class="grow"><b>匯入今天的訂單</b><span class="mut">一次匯入全部，司機自己挑（待分配）</span></span><span class="mut">›</span></button>
-  <div class="card" id="adFleet"></div>
 </main>
 
 <!-- 看板（辦公室看每一趟的進度） -->
@@ -192,6 +193,12 @@
     <b style="font-size:18px">公司地址</b><div class="mut">新行程的預設出發點</div>
     <input id="hmAddr" class="in" style="margin-top:8px" placeholder="例如：嘉義縣布袋鎮○○路○號">
     <p style="margin-bottom:0"><button class="btn" id="hmGo" onclick="saveHome()">儲存</button></p>
+  </div>
+  <div class="card">
+    <b style="font-size:18px">🚚 司機、車牌</b><div class="mut">新增行程時點一下就好；選了司機自動帶他的車</div>
+    <div id="stFleet" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px"><input id="fdName" class="in grow" placeholder="司機名字" autocomplete="off"><input id="fdPlate" class="in grow" placeholder="車牌" autocomplete="off" autocapitalize="characters"></div>
+    <p style="margin-bottom:0"><button class="btn sec" id="fdAdd" onclick="fleetAdd()">＋ 加入</button></p>
   </div>
   <div class="card">
     <b style="font-size:18px">像 App 一樣用</b>
@@ -469,6 +476,8 @@ function twTag(s, withEta) {
   return h;
 }
 const fmtMin = m => m >= 60 ? Math.floor(m / 60) + ' 小時 ' + (m % 60) + ' 分' : m + ' 分';
+/** 按「已送達」「沒送成」的時間（HH:mm） */
+const doneHm = s => { const m = String(s.doneAt || '').match(/ (\d{1,2}):(\d{2})/); return m && s.status !== '待送' ? ('0' + m[1]).slice(-2) + ':' + m[2] : ''; };
 const badgeOf = s => s.status === '已送達' ? '<span class="badge done">已送達</span>' : s.status === '沒送成' ? '<span class="badge fail">沒送成</span>' : '<span class="badge">待送</span>';
 /** 電話欄可能有好幾支：撥第一支 */
 const telOf = p => esc(String(p).split(/[\/、,，]/)[0].replace(/[^\d+#]/g, ''));
@@ -583,6 +592,7 @@ function showSettings() {
   $('hTitle').textContent = '設定';
   show('settings');
   $('hmAddr').value = ST.home ? ST.home.addr : '';
+  loadFleetSettings();
 }
 function saveHome() {
   call('saveHome', { addr: $('hmAddr').value }, '查地址…').then(h => { ST.home = h; toast('已儲存：' + h.addr); });
@@ -721,7 +731,7 @@ function stopRow(s, route) {
     '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + warn + '</div>' +
     (tw ? '<div class="sub">' + tw + '</div>' : '') + (sub.length ? '<div class="sub">' + sub.join('　') + '</div>' : '') + leg +
     (s.status === '沒送成' && s.reason ? '<div class="sub" style="color:var(--red)">原因：' + esc(s.reason) + '</div>' : '') + '</div>' +
-    '<div style="text-align:right">' + badgeOf(s) + '<br><button class="more" onclick="stopMenu(\'' + s.id + '\')">•••</button></div></div>';
+    '<div style="text-align:right">' + badgeOf(s) + (doneHm(s) ? '<div class="sub" style="margin-top:2px">' + doneHm(s) + '</div>' : '') + '<br><button class="more" onclick="stopMenu(\'' + s.id + '\')">•••</button></div></div>';
 }
 
 function renderRoute() {
@@ -1258,14 +1268,32 @@ const plateTag = p => '<span class="plate">' + esc(p) + '</span>';
 function showAdmin() {
   $('hTitle').textContent = '後台';
   show('admin');
-  $('adFleet').innerHTML = '<b style="font-size:18px">🚚 司機、車牌</b><div class="mut">讀取中…</div>';
-  call('fleet', {}, false).then(f => {
-    FLEET = f;
-    if (ST.view !== 'admin') return;
-    $('adFleet').innerHTML = '<b style="font-size:18px">🚚 司機、車牌</b><div class="mut">新增行程時填過的會記住，下次點一下就好；選司機會自動帶他上次開的車。</div>' +
-      (f.drivers.length ? f.drivers.map(d => '<div class="row" style="padding:8px 0;border-bottom:1px solid #eef1f3"><b class="grow">' + esc(d) + '</b>' + (f.lastPlate[d] ? plateTag(f.lastPlate[d]) : '<span class="mut">沒填車牌</span>') + '</div>').join('') : '<div class="mut" style="margin-top:8px">還沒有。新增行程時填司機、車牌。</div>') +
-      (f.plates.length ? '<div class="mut" style="margin-top:8px">車牌：' + f.plates.map(plateTag).join(' ') + '</div>' : '');
-  });
+}
+/* ================= 設定：司機、車牌 ================= */
+function loadFleetSettings() {
+  $('stFleet').innerHTML = '<div class="mut">讀取中…</div>';
+  call('fleet', {}, false).then(renderFleetSettings);
+}
+function renderFleetSettings(f) {
+  FLEET = f;
+  const extra = f.drivers.filter(d => !f.saved.some(x => x.name === d));   // 行程裡填過、還沒加進來的
+  $('stFleet').innerHTML = (f.saved.length ? f.saved.map((x, i) => '<div class="row fleet" style="padding:8px 0;border-bottom:1px solid #eef1f3"><b class="grow" style="font-size:18px">' + esc(x.name) + '</b>' +
+    (x.plate ? plateTag(x.plate) : '<span class="mut">沒填車牌</span>') + '<button class="btn small sec" data-e="' + i + '">改</button><button class="btn small sec" style="color:var(--red)" data-d="' + i + '">刪</button></div>').join('')
+    : '<div class="mut">還沒有。在下面填司機名字、車牌，按「加入」。</div>') +
+    (extra.length ? '<div class="mut" style="margin-top:8px">行程裡填過的：</div><div class="chips">' + extra.map((d, i) => '<button class="chip" data-x="' + i + '">＋ ' + esc(d) + (f.lastPlate[d] ? ' ' + esc(f.lastPlate[d]) : '') + '</button>').join('') + '</div>' : '');
+  const save = list => call('saveFleet', { list }, '儲存中…').then(renderFleetSettings);
+  $('stFleet').querySelectorAll('[data-d]').forEach(b => b.onclick = () => { const x = f.saved[+b.dataset.d]; if (confirm('從清單刪掉「' + x.name + '」？（以前的行程不會變）')) save(f.saved.filter(y => y !== x)); });
+  $('stFleet').querySelectorAll('[data-e]').forEach(b => b.onclick = () => { const x = f.saved[+b.dataset.e]; $('fdName').value = x.name; $('fdPlate').value = x.plate; $('fdPlate').focus(); });
+  $('stFleet').querySelectorAll('[data-x]').forEach(b => b.onclick = () => { const d = extra[+b.dataset.x]; save(f.saved.concat([{ name: d, plate: f.lastPlate[d] || '' }])); });
+}
+/** 加入（名字一樣的就是改車牌） */
+function fleetAdd() {
+  const name = $('fdName').value.trim(), plate = $('fdPlate').value.trim();
+  if (!name) { toast('請填司機名字'); $('fdName').focus(); return; }
+  const list = ((FLEET && FLEET.saved) || []).filter(x => x.name !== name);
+  const i = ((FLEET && FLEET.saved) || []).findIndex(x => x.name === name);
+  list.splice(i >= 0 ? i : list.length, 0, { name, plate });
+  call('saveFleet', { list }, '儲存中…').then(f => { $('fdName').value = ''; $('fdPlate').value = ''; renderFleetSettings(f); toast('已儲存：' + name); });
 }
 /** 司機、車牌：用過的做成下拉選單＋車牌快捷鍵；選了司機自動帶他上次開的車（自己打過車牌就不動） */
 let FLEET = null;
@@ -1286,7 +1314,7 @@ function fleetPick(drv, plt, box, keep) {
 }
 
 /* ================= 看板（辦公室） ================= */
-let boardTimer;
+let boardTimer, BD_OPEN = {};
 function showBoard() {
   $('hTitle').textContent = '📊 今日看板';
   show('board');
@@ -1306,16 +1334,22 @@ function loadBoard(quiet) {
     $('bdList').innerHTML = pool.map(t => '<button class="trip" style="border:2px solid #f5b544" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><b>📥 待分配還有 ' + t.todo + ' 家沒人挑</b></button>').join('') +
       (ts.length ? ts.map(t => {
         const pd = t.total ? t.done / t.total * 100 : 0, pf = t.total ? t.fail / t.total * 100 : 0;
-        return '<button class="trip" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><div class="row"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
+        const late = t.delay == null ? '' : t.delay > 5 ? '<b style="color:var(--red)">比預計晚 ' + fmtMin(t.delay) + '</b>' : t.delay < -5 ? '<b style="color:var(--g)">比預計早 ' + fmtMin(-t.delay) + '</b>' : '<b style="color:var(--g)">照預計</b>';
+        const tl = t.stops.map(s => '<div class="row" style="padding:5px 0;border-bottom:1px solid #eef1f3"><span class="mut" style="width:26px">' + s.seq + '</span>' +
+          '<span style="width:76px;white-space:nowrap;font-weight:700;color:' + (s.status === '已送達' ? 'var(--g)' : s.status === '沒送成' ? 'var(--red)' : '#99a3ab') + '">' + (s.status === '已送達' ? '✓ ' + (s.at || '') : s.status === '沒送成' ? '✗ ' + (s.at || '') : '待送') + '</span>' +
+          '<span class="grow">' + esc(s.client) + (s.status === '沒送成' && s.reason ? '<span class="mut">（' + esc(s.reason) + '）</span>' : '') + '</span><span class="mut" style="font-size:14px">' + (s.eta ? '預計 ' + s.eta : '') + '</span></div>').join('');
+        return '<div class="trip bd"><div class="row" onclick="go({ v: \'trip\', id: \'' + t.id + '\' })"><b class="grow" style="font-size:19px">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b>' +
           '<span class="mut">' + (t.driver ? '司機 ' + esc(t.driver) : '沒填司機') + (t.plate ? ' ' + plateTag(t.plate) : '') + '</span></div>' +
           '<div class="bar" style="display:flex"><i style="width:' + pd + '%"></i><i style="width:' + pf + '%;background:var(--red)"></i></div>' +
           '<div style="margin-top:6px">✓ ' + t.done + '　<span style="color:var(--red)">✗ ' + t.fail + '</span>　待送 ' + t.todo + '　<span class="mut">共 ' + t.total + ' 家' + (t.km !== '' ? '・' + t.km + ' km' : '') + '</span></div>' +
           (!t.total ? '<div class="mut">還沒有客戶（' + esc(t.depart) + ' 出發）</div>' : !t.planned && t.todo ? '<div class="mut">還沒規劃路線（' + esc(t.depart) + ' 出發）</div>' : '') +
           (t.next ? '<div class="mut">下一站：<b style="color:var(--ink)">' + esc(t.next.client || t.next.addr) + '</b>' + (t.next.eta ? '（預計 ' + t.next.eta + '）' : '') + '</div>' : t.total ? '<div class="mut">🎉 送完了</div>' : '') +
-          (t.last ? '<div class="mut">最後一次按送達：' + t.last + '</div>' : '') +
+          (t.last ? '<div class="mut">最後一次按：' + t.last + (late ? '　' + late : '') + '</div>' : '') +
           (t.late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 可能晚到：' + t.late.map(x => esc(x.client) + '（要 ' + x.close + ' 前，預計 ' + x.eta + '）').join('、') + '</div>' : '') +
-          (t.fails.length ? '<div class="mut" style="color:var(--red)">沒送成：' + t.fails.map(x => esc(x.client) + '（' + esc(x.reason || '未填') + '）').join('、') + '</div>' : '') + '</button>';
+          (t.fails.length ? '<div class="mut" style="color:var(--red)">沒送成：' + t.fails.map(x => esc(x.client) + '（' + esc(x.reason || '未填') + '）').join('、') + '</div>' : '') +
+          (t.total ? '<details' + (BD_OPEN[t.id] ? ' open' : '') + ' data-id="' + t.id + '"><summary class="mut" style="margin-top:6px;font-weight:700">每一家幾點送到</summary>' + tl + '</details>' : '') + '</div>';
       }).join('') : '<div class="card mut" style="text-align:center">這一天沒有行程</div>');
+    $('bdList').querySelectorAll('details').forEach(d => d.ontoggle = () => { BD_OPEN[d.dataset.id] = d.open; });   // 自動更新時保持打開
   });
 }
 
