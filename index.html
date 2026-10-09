@@ -302,12 +302,12 @@
 <main id="vTrip" class="hide">
   <div id="pList">
     <div class="card" style="padding:4px 14px">
-      <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
+      <button class="se" onclick="openPlan()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
     </div>
     <div id="poolHint" class="tipline warn hide"><span class="grow">📥 待分配：司機自己挑，挑走的就不在這裡</span><button class="tipq" onclick="tipHelp('pool')" aria-label="說明">？</button></div>
     <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()"><span style="opacity:.85;font-size:15px">① </span>＋ 加客戶</button>
     <div class="card">
-      <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b><button class="selbtn hide" id="reBtn" onclick="toggleReorder()">↕ 調整順序</button><button class="selbtn" id="selBtn" onclick="selMode()">☑ 選多家</button></div>
+      <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b><button class="selbtn hide" id="reBtn" onclick="toggleReorder()">↕ 調整順序</button><button class="selbtn" id="selBtn" onclick="moreBtn()">⋯ 更多</button></div>
       <div id="planSum"></div>
       <div id="listWarn"></div>
       <div id="reBar" class="hide warnbox">按住右邊的 <b>☰</b> 拖到想要的位置，好了按「照這個順序重算」。<p style="margin:8px 0 0"><button class="btn" onclick="saveReorder()">照這個順序重算</button></p></div>
@@ -316,7 +316,6 @@
     </div>
     <div id="selBar" class="selbar hide"></div>
     <div id="nextBar" class="selbar hide"></div>
-    <button class="btn sec" onclick="tripMenu()">⋯ 這個行程的其他動作</button>
     <div id="nextPad" class="hide" style="height:70px"></div>
   </div>
 </main>
@@ -960,11 +959,11 @@ function render() {
   $('stFilter').innerHTML = ss.length && !re ? F.map(f => '<button class="chip' + (ST.filter === f[0] ? ' on' : '') + '" data-f="' + f[0] + '">' + f[1] + ' ' + f[2] + '</button>').join('') : '';
   $('stFilter').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { ST.filter = b.dataset.f; render(); });
   const shown = ST.filter === 'all' ? ss : ss.filter(s => s.status === ST.filter);
-  $('selBtn').classList.toggle('hide', !ss.length || re);
+  $('selBtn').classList.toggle('hide', re);
   renderNext();
   if (re) { renderRoute(); return; }
   if (ST.sel) { renderSel(shown); return; }
-  $('selBtn').textContent = '☑ 選多家';
+  $('selBtn').textContent = '⋯ 更多';
   $('selBar').classList.add('hide');
   // 排好路線：照順序、有編號、每一站的公里和預計幾點到；全部顯示時前後加起點、終點
   const row = s => stopRow(s, planned);
@@ -1139,36 +1138,72 @@ function saveReorder() {
 }
 
 /* ================= 起點、終點 ================= */
-function openEnds() {
+/**
+ * 路徑規劃（一個視窗）：出發時間、出發地點、終點、規劃方式。
+ * 按「儲存並規劃路線」＝存好設定再排；「只儲存」＝只存（排好的路線時間會跟著更新）
+ */
+function openPlan() {
   const t = ST.trip;
-  sheet('<h2>起點、終點、出發時間</h2><label class="f">出發時間（推算每一站幾點到）</label><input id="dpIn" class="in" type="time" value="' + esc(t.depart) + '">' +
-    '<label class="f">起點</label><input id="stIn" class="in" value="' + esc(t.start) + '">' +
+  const hasStart = !!t.start;
+  const started = ST.stops.some(s => s.status !== '待送');
+  const canPlan = ST.stops.some(s => s.status === '待送' && s.lat !== '');
+  sheet('<h2>路徑規劃</h2><label class="f">出發時間（推算每一站幾點到）</label><input id="dpIn" class="in" type="time" value="' + esc(t.depart) + '">' +
+    '<label class="f">出發地點</label>' +
+    '<label class="opt"><input type="radio" name="pf" value="start"' + (hasStart && !started ? ' checked' : '') + '><span>從起點出發</span></label>' +
+    '<input id="stIn" class="in" value="' + esc(t.start) + '" placeholder="起點地址">' +
     (ST.home ? '<button class="sug" id="stHome">🏠 公司：' + esc(ST.home.addr) + '</button>' : '') +
+    '<label class="opt"><input type="radio" name="pf" value="here"' + (!hasStart || started ? ' checked' : '') + '><span>我現在的位置<div class="mut">已經在送貨途中，請選這個，會從現在的位置重排剩下的。</div></span></label>' +
     '<label class="f">終點</label>' + ['回起點', '最後一家', '指定地址'].map(m => '<label class="opt"><input type="radio" name="em" value="' + m + '"' + (t.endMode === m ? ' checked' : '') + '><span>' +
       (m === '回起點' ? '回到起點' : m === '最後一家' ? '送完最後一家就結束' : '指定地址') + '</span></label>').join('') +
     '<input id="enIn" class="in" value="' + esc(t.end) + '" placeholder="終點地址">' +
-    '<p><button class="btn" id="enGo">儲存</button></p>', (el, close) => {
+    (canPlan ? '<label class="f">路線規劃方式</label>' +
+      '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統幫我排最順的路（推薦）</span></label>' +
+      '<label class="opt"><input type="radio" name="pm" value="manual"><span>照送貨清單目前的順序</span></label>' : '') +
+    '<p><button class="btn" id="pnGo">' + (canPlan ? (t.planned ? '儲存並重新規劃' : '儲存並規劃路線') : '儲存') + '</button></p>' +
+    (canPlan ? '<p><button class="btn sec" id="pnSave">只儲存，不重排</button></p>' : ''), (el, close) => {
     const home = el.querySelector('#stHome');
     if (home) home.onclick = () => { $('stIn').value = ST.home.addr; };
-    el.querySelector('#enGo').onclick = async () => {
+    const save = async plan => {
       const patch = { depart: $('dpIn').value };
       const sa = $('stIn').value.trim(), em = el.querySelector('input[name=em]:checked').value, ea = $('enIn').value.trim();
+      const pf = el.querySelector('input[name=pf]:checked').value;
+      let from = null, changed = patch.depart !== t.depart;
       if (sa && sa !== t.start) {
         if (ST.home && sa === ST.home.addr) patch.start = ST.home;
         else { const g = (await call('geocode', { addrs: [sa] }, '查起點…'))[0]; if (!g.ok) { alert('找不到起點地址：' + sa); return; } patch.start = { addr: sa, lat: g.lat, lng: g.lng }; }
+        changed = true;
       }
+      if (!sa && pf === 'start') { alert('請填起點地址，或選「我現在的位置」'); return; }
       patch.endMode = em;
+      if (em !== t.endMode) changed = true;
       if (em === '指定地址') {
         if (!ea) { alert('請填終點地址'); return; }
-        const g = (await call('geocode', { addrs: [ea] }, '查終點…'))[0];
-        if (!g.ok) { alert('找不到終點地址：' + ea); return; }
-        patch.end = { addr: ea, lat: g.lat, lng: g.lng };
+        if (ea !== t.end) {
+          const g = (await call('geocode', { addrs: [ea] }, '查終點…'))[0];
+          if (!g.ok) { alert('找不到終點地址：' + ea); return; }
+          patch.end = { addr: ea, lat: g.lat, lng: g.lng };
+          changed = true;
+        }
       }
-      call('updateTrip', { id: t.id, patch }, '儲存中…').then(r => {
-        close(); refresh(r);
-        if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '重算時間…').then(refresh);   // 預計到達跟著更新
-      });
+      if (plan && pf === 'here') {
+        from = await here();
+        if (!from) {
+          if (!sa && !hasStart) { alert('抓不到目前位置，請先填起點地址。'); return; }
+          toast('抓不到目前位置，改從起點出發', 3500);
+        }
+      }
+      close();
+      let p = changed ? call('updateTrip', { id: t.id, patch }, '儲存中…').then(r => { refresh(r); return r; }) : Promise.resolve(null);
+      if (plan) {
+        const mode = (el.querySelector('input[name=pm]:checked') || {}).value || 'auto';
+        p.then(() => call('planRoute', { trip: t.id, mode, from }, '規劃路線中…（家數多要等十幾秒）')).then(r => { refresh(r); toast('路線規劃好了'); });
+      } else if (changed) {
+        p.then(r => { if (r && r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '重算時間…').then(refresh); });   // 預計到達跟著更新
+      }
     };
+    el.querySelector('#pnGo').onclick = () => save(canPlan);
+    const sv = el.querySelector('#pnSave');
+    if (sv) sv.onclick = () => save(false);
   });
 }
 
@@ -1240,17 +1275,21 @@ function editStop(s) {
     };
   });
 }
+/** 「⋯ 更多」：選多家時變成「取消」；平常打開選單 */
+function moreBtn() { if (ST.sel) selMode(); else tripMenu(); }
 function tripMenu() {
   const t = ST.trip;
   const left = ST.stops.filter(s => s.status !== '已送達').length;
   sheet('<h2>' + esc(t.name) + '</h2><div style="display:grid;gap:10px">' +
+    (ST.stops.length ? '<button class="btn sec" data-a="sel">☑ 選多家（一次刪除、退回待分配）</button>' : '') +
     '<button class="btn sec" data-a="rename">✎ 改名稱、日期、上午／下午、司機、車牌</button>' +
     (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家移到' + nextShiftLabel(t) + '</button>' : '') +
     '<button class="btn sec" data-a="del" style="color:var(--red)">刪除這個行程</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
       close();
       const a = b.dataset.a;
-      if (a === 'rename') renameTrip();
+      if (a === 'sel') selMode();
+      else if (a === 'rename') renameTrip();
       else if (a === 'carry') carryOver();
       else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { delete TRIPS[t.id]; ST.trip = null; ST.trips = null; backHome(); });
     });
@@ -1405,31 +1444,6 @@ function spokenAddr(s) {
 }
 
 /* ================= 規劃路線 ================= */
-function openPlan() {
-  const hasStart = !!ST.trip.start;
-  const started = ST.stops.some(s => s.status !== '待送');
-  sheet('<h2>路徑規劃選項</h2><b>路線規劃方式</b>' +
-    '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統幫我排最順的路（推薦）</span></label>' +
-    '<label class="opt"><input type="radio" name="pm" value="manual"><span>照送貨清單目前的順序</span></label>' +
-    '<b>出發地點</b>' +
-    '<label class="opt"><input type="radio" name="pf" value="start"' + (hasStart && !started ? ' checked' : '') + (hasStart ? '' : ' disabled') + '><span>起點：' + esc(ST.trip.start || '（未設定）') + '</span></label>' +
-    '<label class="opt"><input type="radio" name="pf" value="here"' + (!hasStart || started ? ' checked' : '') + '><span>我現在的位置<div class="mut">已經在送貨途中，請選這個，會從現在的位置重排剩下的。</div></span></label>' +
-    '<p><button class="btn" id="plGo">開始規劃</button></p>', (el, close) => {
-    el.querySelector('#plGo').onclick = async () => {
-      const mode = el.querySelector('input[name=pm]:checked').value, pf = el.querySelector('input[name=pf]:checked').value;
-      let from = null;
-      if (pf === 'here') {
-        from = await here();
-        if (!from) {
-          if (!hasStart) { alert('抓不到目前位置，請先設定起點（送貨清單上方的「起點」）。'); return; }
-          toast('抓不到目前位置，改從起點出發', 3500);
-        }
-      }
-      close();
-      call('planRoute', { trip: ST.trip.id, mode, from }, '規劃路線中…（家數多要等十幾秒）').then(r => { refresh(r); toast('路線規劃好了'); });
-    };
-  });
-}
 function here() {
   return new Promise(ok => {
     if (!navigator.geolocation) { ok(null); return; }
