@@ -167,6 +167,7 @@
   .selrow input{width:26px;height:26px;flex:none;accent-color:var(--g)}
   .selbar{position:fixed;left:0;right:0;bottom:calc(62px + max(2px, calc(env(safe-area-inset-bottom) - 12px)));z-index:44;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 10px rgba(0,0,0,.08);padding:10px 14px;display:flex;gap:8px;align-items:center}
   .selbar .btn{width:auto;padding:10px 14px;font-size:16px}
+  #nextBar .btn{width:100%;padding:15px 14px;font-size:20px}
   #stFilter .chip{padding:6px 10px;font-size:15px;white-space:nowrap}
   .tipline{display:flex;align-items:center;gap:8px;border-radius:10px;padding:6px 8px 6px 12px;margin-top:8px;font-size:15.5px;font-weight:700}
   .tipline.warn{background:#fff8e1;color:#8a5a00}.tipline.fail{background:#fde4e2;color:#b3261e}
@@ -175,6 +176,9 @@
   .dr-just.skip{background:#fff8e1;border-color:#f5d77a;color:#8a5a00}
   .dr-just.fail{background:#fde4e2;border-color:#f3a59e;color:#b3261e}
   .dr-just button{flex:none;border:1px solid currentColor;background:#fff;color:inherit;border-radius:8px;padding:6px 14px;font-weight:700;font-size:15px}
+  .dr-back{background:#e8f1ff;border:1.5px solid #9cc2ff;color:#1b4fa8;border-radius:12px;padding:10px 12px;margin-bottom:10px;font-size:17px;font-weight:700;line-height:1.55;animation:drIn .25s ease}
+  .dr-card.back .dr-done{animation:drPulse 1.3s ease-in-out infinite}
+  @keyframes drPulse{0%,100%{box-shadow:0 0 0 0 rgba(22,160,106,.55)}50%{box-shadow:0 0 0 7px rgba(22,160,106,0)}}
   @keyframes drIn{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   .btn.pause{background:#fff8e1;color:#9a5b00;border:1.5px solid #f5d77a}
   .big2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
@@ -303,7 +307,7 @@
       <button class="se" onclick="openEnds()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
     </div>
     <div id="poolHint" class="tipline warn hide"><span class="grow">📥 待分配：司機自己挑，挑走的就不在這裡</span><button class="tipq" onclick="tipHelp('pool')" aria-label="說明">？</button></div>
-    <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()">＋ 加客戶</button>
+    <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()"><span style="opacity:.85;font-size:15px">① </span>＋ 加客戶</button>
     <div class="card">
       <div class="row"><b class="grow" style="font-size:19px">送貨清單 <span class="badge" id="cntBadge">0</span></b><button class="selbtn" id="selBtn" onclick="selMode()">☑ 選多家</button></div>
       <div id="listWarn"></div>
@@ -311,7 +315,9 @@
       <div id="stopList"></div>
     </div>
     <div id="selBar" class="selbar hide"></div>
+    <div id="nextBar" class="selbar hide"></div>
     <button class="btn sec" onclick="tripMenu()">⋯ 這個行程的其他動作</button>
+    <div id="nextPad" class="hide" style="height:70px"></div>
   </div>
 
   <div id="pRoute" class="hide">
@@ -547,6 +553,8 @@ if (HIST) HIST.setChangeHandler(e => onNav(e.state)); else window.addEventListen
 // 從 Google 地圖、電話回到 App：背景拿最新的
 document.addEventListener('visibilitychange', () => {
   if (document.hidden || ST.view === 'pin') return;
+  const D = ST.drive;
+  if (ST.view === 'drive' && D && D.nav && Date.now() - D.nav.at > 4000) { D.back = true; renderDrive(); drScroll(); }   // 從地圖回來：告訴他下一步
   if (ST.view === 'trip' || ST.view === 'drive') quietRefresh();
   else if (ST.view === 'home') loadHome();
 });
@@ -666,7 +674,7 @@ function nextBatch(first) {
 function batchBtn(first) {
   const b = nextBatch(first), n = Math.min(b.length, NAV_MAX);
   if (n < 2) return '';
-  return '<div class="row" style="margin-top:10px"><a class="btn sec grow" id="navBatch" style="text-align:center;text-decoration:none" target="_blank" href="' + batchUrl(b) + '">🗺 接下來 ' + n + ' 站一起導航</a>' +
+  return '<div class="row" style="margin-top:10px"><a class="btn sec grow" id="navBatch" style="text-align:center;text-decoration:none" target="_blank" href="' + batchUrl(b) + '" onclick="driveNav(\'' + b.slice(0, n).map(x => x.id).join(',') + '\')">🗺 接下來 ' + n + ' 站一起導航</a>' +
     '<button class="tipq" style="width:40px;height:40px;color:var(--mut)" onclick="tipHelp(\'batch\')" aria-label="說明">？</button></div>';
 }
 
@@ -704,7 +712,12 @@ function prefetchTrips() {
 }
 function boot() {
   const snap = loadSnap();
-  if (snap) { navReplace({ v: 'home' }); loadHome(true); } else busy('連線中…');   // 有上次的資料：先顯示，不用等
+  // 剛才按了「導航」跑去地圖，手機把 App 收掉了：打開就直接回到送貨畫面（3 小時內）
+  const rs0 = lsGet('dh_resume', null), resume = rs0 && Date.now() - rs0.at < 3 * 3600 * 1000 ? rs0 : null;
+  if (rs0 && !resume) lsSet('dh_resume', null);
+  let resumed = false;
+  const tryResume = () => { if (resumed || !resume || ST.view !== 'home') return; resumed = true; go({ v: 'drive', id: resume.trip }); };
+  if (snap) { navReplace({ v: 'home' }); loadHome(true); if (resume && TRIPS[resume.trip]) tryResume(); } else busy('連線中…');   // 有上次的資料：先顯示，不用等
   rpc('hello', { pin: ST.pin, trips: true }, ST.pin).then(r => {
     busy(false);
     if (!r.pinOk) { lsSet('dh_snap', null); ST.trips = null; showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
@@ -712,8 +725,9 @@ function boot() {
     ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
     if (r.trips) ST.trips = r.trips;
     if (!snap) navReplace({ v: 'home' });
-    if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
+    if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); tryResume(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
     if (!snap || ST.view === 'home') loadHome(true);
+    tryResume();
     prefetchTrips(); saveSnap();
   }, e => {
     busy(false);
@@ -972,6 +986,7 @@ function render() {
   $('stFilter').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { ST.filter = b.dataset.f; render(); });
   const shown = ST.filter === 'all' ? ss : ss.filter(s => s.status === ST.filter);
   $('selBtn').classList.toggle('hide', !ss.length);
+  renderNext();
   if (ST.sel) { renderSel(shown); return; }
   $('selBtn').textContent = '☑ 選多家';
   $('selBar').classList.add('hide');
@@ -995,6 +1010,25 @@ function render() {
   renderRoute();
 }
 
+/* ================= 下一步（行程頁最下面一顆大按鈕：現在該做什麼就是這一顆） ================= */
+function renderNext() {
+  const t = ST.trip, ss = ST.stops, bar = $('nextBar');
+  const todo = ss.filter(s => s.status === '待送'), located = todo.filter(s => s.lat !== '');
+  let html = '';
+  if (t.name !== '待分配' && !ST.sel && located.length) {
+    html = t.planned ? '<button class="btn grow" id="nxGo">③ 開始導航 ▶　<small style="font-weight:600">剩 ' + todo.length + ' 家</small></button>'
+      : '<button class="btn grow" id="nxGo">② 排路線　<small style="font-weight:600">' + located.length + ' 家</small></button>';
+  }
+  bar.innerHTML = html;
+  bar.classList.toggle('hide', !html);
+  $('nextPad').classList.toggle('hide', !html);
+  if (html) $('nxGo').onclick = t.planned ? () => go({ v: 'drive', id: t.id }) : quickPlan;
+}
+/** 排路線：沒送過、有起點就直接排（系統排最順的）；已經在途中或沒設起點，要選從哪裡排 */
+function quickPlan() {
+  if (!ST.trip.start || ST.stops.some(s => s.status !== '待送')) { openPlan(); return; }
+  call('planRoute', { trip: ST.trip.id, mode: 'auto', from: null }, '排路線中…（家數多要等十幾秒）').then(r => { refresh(r); toast('路線排好了，按下面的「開始導航」出發', 3500); });
+}
 /* ================= 送貨清單：一次選好幾家（刪除、退回待分配） ================= */
 function selMode() { ST.sel = ST.sel ? null : {}; render(); }
 function renderSel(shown) {
@@ -1378,7 +1412,7 @@ function openAddStops() {
       call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
         close(); refresh(r);
         if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
-        toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+        toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，下面按「② 排路線」'), 3500);
       });
     };
     render();
@@ -1452,13 +1486,26 @@ function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else loc
 let drTimer;
 function showDrive() {
   if (!ST.drive || ST.drive.trip !== ST.trip.id) {
-    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null };
+    const nv = lsGet(drKey('nav'), null), fresh = nv && Date.now() - nv.at < 3 * 3600 * 1000;   // 導航出去後 3 小時內回來
+    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null, nav: fresh ? nv : null, back: !!fresh };
   }
   show('drive');
   renderDrive();
+  if (ST.drive.back) setTimeout(drScroll, 60);
   clearInterval(drTimer);
   drTimer = setInterval(() => { if (ST.view === 'drive') drClock(); else clearInterval(drTimer); }, 1000);
 }
+/** 按了「導航」（一家或一起導航好幾家）：記下去哪幾家。回來時（或 App 被手機收掉重開）就知道要提醒「到了嗎」 */
+function driveNav(idsStr) {
+  const ids = String(idsStr).split(',').filter(Boolean), t = ST.trip;
+  if (!t || !ids.length) return;
+  if (!ST.drive || ST.drive.trip !== t.id) ST.drive = { trip: t.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null };
+  driveStart();
+  ST.drive.nav = { ids, at: Date.now() }; ST.drive.back = false;
+  lsSet(drKey('nav'), ST.drive.nav); lsSet('dh_resume', { trip: t.id, at: Date.now() });
+  setTimeout(() => { if (ST.view === 'drive') renderDrive(); }, 500);   // 「導航」變「再導航」：等地圖開起來再換，免得打斷
+}
+function drScroll() { const el = $('drList'); if (el) window.scrollTo({ top: Math.max(0, el.getBoundingClientRect().top + window.scrollY - 70), behavior: 'smooth' }); }
 /** 開始計時：第一次按「導航」「完成」「暫停」才算出發（只是打開來看不會開始算） */
 function driveStart() {
   if (!ST.drive || ST.drive.start || !ST.trip || ST.drive.trip !== ST.trip.id) return;
@@ -1489,6 +1536,13 @@ function renderDrive() {
   const done = ss.filter(s => s.status === '已送達'), fail = ss.filter(s => s.status === '沒送成');
   const cur = going[0] || paused[0] || null;
   if (!D.open || !ss.some(s => s.id === D.open)) D.open = cur && cur.id;
+  // 導航回來：剛導航的那幾家還沒送的，才要提醒；都處理完就清掉
+  if (D.nav) {
+    D.nav.ids = D.nav.ids.filter(id => going.some(x => x.id === id));
+    if (!D.nav.ids.length) { D.nav = null; D.back = false; lsSet(drKey('nav'), null); lsSet('dh_resume', null); }
+  }
+  const target = D.nav ? going.find(x => x.id === D.nav.ids[0]) : null;
+  if (D.back && target) D.open = target.id;   // 那一家展開著，完成就在眼前
   const delay = drDelay(), fin = done.length + fail.length, pct = ss.length ? Math.round(fin / ss.length * 100) : 0;
   const leftKm = Math.round(todo.reduce((a, s) => a + (Number(s.legKm) || 0), 0) * 10) / 10;
   const lastTodo = todo.filter(s => s.eta).sort((a, b) => a.seq - b.seq).pop();
@@ -1517,11 +1571,12 @@ function renderDrive() {
   const j = D.just, js = j && ss.find(x => x.id === j.id);
   const justBar = js ? '<div class="dr-just ' + j.kind + '"><span class="grow">' + (j.kind === 'done' ? '✓ <b>' + esc(js.client || js.addr) + '</b> ' + doneHm(js) + ' 已送達' : j.kind === 'fail' ? '✗ <b>' + esc(js.client || js.addr) + '</b> 白跑了（' + esc(js.reason || '') + '）' : '⏸ <b>' + esc(js.client || js.addr) + '</b> 晚點送，排到最後') +
     '</span><button onclick="drUndo()">復原</button></div>' : '';
-  $('drList').innerHTML = justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0)).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
+  const backBar = D.back && target ? '<div class="dr-back">👋 回來了。' + (D.nav.ids.length > 1 ? '剛剛一起導航 ' + D.nav.ids.length + ' 家，現在是 <b>' + esc(target.client || target.addr) + '</b>：送完一家就按一家的 <b>✅ 完成</b>' : '到 <b>' + esc(target.client || target.addr) + '</b> 了嗎？送到就按下面的 <b>✅ 完成</b>') + '</div>' : '';
+  $('drList').innerHTML = backBar + justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0, !!(target && D.back && target.id === s.id))).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
   $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAddStops()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
-function drCard(s, isCur, open, delay, paused) {
+function drCard(s, isCur, open, delay, paused, back) {
   const st = s.status, eta = st === '待送' ? drEta(s, delay) : '';
   const late = eta && s.close && eta > s.close;
   // 位置有問題：地址旁邊一個可以按的標籤（用現在的位置／在地圖上拖），不另外多一顆大按鈕
@@ -1532,8 +1587,9 @@ function drCard(s, isCur, open, delay, paused) {
     ? [s.legKm !== '' && s.legKm + ' km · ' + fmtMin(s.legMin), eta && '<b' + (late ? ' class="late"' : '') + '>預計 ' + eta + '</b>', twText(s) && twTag(s), paused && '<span class="badge warn">晚點送</span>', s.lat === '' && '<span class="badge fail">沒有位置</span>'].filter(Boolean).join('　')
     : (st === '已送達' ? '<b>✓ ' + doneHm(s) + ' 送達</b>' : '<b class="late">✗ ' + doneHm(s) + ' 沒送成' + (s.reason ? '（' + esc(s.reason) + '）' : '') + '</b>');
   // 導航放卡片右上角（跟店名同一行）；沒位置、已經送完的顯示展開箭頭
-  const nav = st === '待送' && s.lat !== '' ? '<a class="dr-nav nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveStart()"><i>➤</i>導航</a>' : '';
-  let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + '">' + nav + '<button class="dr-row' + (nav ? ' has-nav' : '') + '" data-open="' + s.id + '">' + no +
+  const again = ST.drive && ST.drive.nav && ST.drive.nav.ids.indexOf(s.id) >= 0;   // 導航過了：按鈕改成「再導航」
+  const nav = st === '待送' && s.lat !== '' ? '<a class="dr-nav nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveNav(\'' + s.id + '\')"><i>' + (again ? '↻' : '➤') + '</i>' + (again ? '再導航' : '導航') + '</a>' : '';
+  let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + (back ? ' back' : '') + '">' + nav + '<button class="dr-row' + (nav ? ' has-nav' : '') + '" data-open="' + s.id + '">' + no +
     '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + fixTag + '</div>' : fixTag) +
     '<div class="dr-meta">' + meta + '</div></span>' + (nav ? '' : '<span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span>') + '</button>';
   if (open) {
@@ -1584,7 +1640,7 @@ function driveEnd(force) {
   const left = ST.stops.filter(s => s.status === '待送').length;
   if (!force && left && !confirm('還有 ' + left + ' 家待送，確定結束？（之後按下方「導航」可以繼續）')) return;
   if (!left) {   // 送完了：回到「行程」清單（下一趟從這裡點）
-    lsSet(drKey('go'), null); lsSet(drKey('skip'), null); ST.drive = null;
+    lsSet(drKey('go'), null); lsSet(drKey('skip'), null); lsSet(drKey('nav'), null); lsSet('dh_resume', null); ST.drive = null;
     ST.homeTab = 'todo'; navReplace({ v: 'home' }); route({ v: 'home' });
     return;
   }
@@ -1629,7 +1685,7 @@ function pickFromRoute(name) {
         call('addStops', { trip: ST.trip.id, stops }, '加入中…').then(r => {
           close(); refresh(r);
           if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
-          toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+          toast('已加入 ' + stops.length + ' 家' + (r.trip.planned ? '，插在最順路的位置' : '，下面按「② 排路線」'), 3500);
         });
       };
       render();
@@ -1955,7 +2011,7 @@ function pickFromPool() {
         call('moveStops', { ids, to: ST.trip.id }, '搬到我的行程…').then(r => {
           close(); refresh(r);
           if (r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '更新距離…').then(refresh);
-          toast('已搬 ' + ids.length + ' 家到你的行程' + (r.trip.planned ? '，插在最順路的位置' : '，可以到「路線規劃」排路線了'), 3500);
+          toast('已搬 ' + ids.length + ' 家到你的行程' + (r.trip.planned ? '，插在最順路的位置' : '，下面按「② 排路線」'), 3500);
         }, () => { close(); setTimeout(pickFromPool, 400); });   // 被別的司機先挑走了：重新讀待分配讓他再挑
       };
       render();
@@ -2415,7 +2471,7 @@ function finishImport() {
       toast('已匯入 ' + stops.length + ' 家，司機可以自己挑了', 3500);
     } else {
       goBack();   // 回到行程
-      toast('已加入 ' + stops.length + ' 家，可以到「路線規劃」排路線了', 3500);
+      toast('已加入 ' + stops.length + ' 家，下面按「② 排路線」', 3500);
     }
   });
 }
