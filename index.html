@@ -167,7 +167,7 @@
   .selrow input{width:26px;height:26px;flex:none;accent-color:var(--g)}
   .selbar{position:fixed;left:0;right:0;bottom:calc(62px + max(2px, calc(env(safe-area-inset-bottom) - 12px)));z-index:44;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 10px rgba(0,0,0,.08);padding:10px 14px;display:flex;gap:8px;align-items:center}
   .selbar .btn{width:auto;padding:10px 14px;font-size:16px}
-  #nextBar .btn{width:100%;padding:15px 14px;font-size:20px}
+  #nextBar .btn,#homeBar .btn{width:100%;padding:15px 14px;font-size:20px}
   #stFilter .chip{padding:6px 10px;font-size:15px;white-space:nowrap}
   .tipline{display:flex;align-items:center;gap:8px;border-radius:10px;padding:6px 8px 6px 12px;margin-top:8px;font-size:15.5px;font-weight:700}
   .tipline.warn{background:#fff8e1;color:#8a5a00}.tipline.fail{background:#fde4e2;color:#b3261e}
@@ -220,11 +220,12 @@
 
 <!-- 首頁：行程列表 -->
 <main id="vHome" class="hide">
-  <button class="btn" onclick="newTrip()">＋ 新增行程</button>
   <div id="poolBox"></div>
   <div id="homeWarn"></div>
   <div class="tabs" style="margin-top:14px"><button id="hmTodo" class="on" onclick="homeTab('todo')">待配送</button><button id="hmDone" onclick="homeTab('done')">已完成</button></div>
   <div id="tripList"></div>
+  <div style="height:70px"></div>
+  <div id="homeBar" class="selbar"><button class="btn" onclick="newTrip()">＋ 新增行程</button></div>   <!-- 固定在導航列上面，不用往上找 -->
 </main>
 
 <!-- 客戶（以前送過的） -->
@@ -301,9 +302,6 @@
 <!-- 行程 -->
 <main id="vTrip" class="hide">
   <div id="pList">
-    <div class="card" style="padding:4px 14px">
-      <button class="se" onclick="openPlan()"><span class="dot" style="background:#2ecc71"></span><span class="grow"><span id="startTxt"></span> <span class="tw" id="departTxt"></span> → <span id="endTxt"></span></span><span class="mut">›</span></button>
-    </div>
     <div id="poolHint" class="tipline warn hide"><span class="grow">📥 待分配：司機自己挑，挑走的就不在這裡</span><button class="tipq" onclick="tipHelp('pool')" aria-label="說明">？</button></div>
     <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()"><span style="opacity:.85;font-size:15px">① </span>＋ 加客戶</button>
     <div class="card">
@@ -741,7 +739,7 @@ function renderTrips() {
       return '<button class="trip" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
         (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
-    }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按上面「新增行程」開始。') + '</div>';
+    }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按下面「新增行程」開始。') + '</div>';
   }
 }
 const nowHour = () => (new Date().getHours() + (ST.hourOff || 0) + 24) % 24;
@@ -929,9 +927,6 @@ function render() {
   const isPool = t.name === '待分配';
   const planned = !!t.planned && ss.length > 0 && !isPool;
   $('poolHint').classList.toggle('hide', !isPool);
-  $('startTxt').textContent = t.start ? (ST.home && t.start === ST.home.addr ? '公司' : t.start) : '目前位置';   // 起點、終點一行就好
-  $('departTxt').textContent = t.depart + ' 出發';
-  $('endTxt').textContent = endLabel(t);
   $('cntBadge').textContent = ss.length;
   const re = !!ST.reorder;
   $('addBtn').classList.toggle('hide', re);
@@ -942,9 +937,9 @@ function render() {
   const done = ss.filter(s => s.status === '已送達').length, fail = ss.filter(s => s.status === '沒送成').length;
   const pct = ss.length ? Math.round((done + fail) / ss.length * 100) : 0;
   $('planSum').innerHTML = isPool || !ss.length || re ? '' : planned
-    ? '<div class="mut" style="margin-top:6px;font-size:15.5px">✓ ' + ({ 自動最佳化: '系統排的', 自訂順序: '照我排的順序' }[t.plan] || t.plan) + ' · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + (pct ? ' · ' + pct + '% 完成' : '') + '</div>' +
+    ? '<div class="mut" style="margin-top:6px;font-size:15.5px">✓ ' + ({ 自動最佳化: '系統排的', 自訂順序: '照我排的順序' }[t.plan] || t.plan) + ' · ' + t.depart + ' 出發 · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + (pct ? ' · ' + pct + '% 完成' : '') + '</div>' +
       '<div class="dr-head" style="padding:6px 0;border:0;font-size:15.5px"><a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">🗺 地圖</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>'
-    : '<div class="mut" style="margin-top:6px;font-size:15.5px">還沒排路線　<a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>';
+    : '<div class="mut" style="margin-top:6px;font-size:15.5px">還沒排路線 · ' + t.depart + ' 出發　<a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>';
   const noLoc = ss.filter(s => s.lat === '');
   const rough = ss.filter(s => s.geo === '約略');
   const late = planned ? ss.filter(isLate) : [];
