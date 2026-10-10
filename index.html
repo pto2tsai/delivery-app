@@ -40,6 +40,11 @@
   .tabs button.on{background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12)}
   .badge{display:inline-block;border-radius:12px;padding:2px 10px;font-size:14px;font-weight:700;background:#eef1f3;color:#5a6670;white-space:nowrap}
   .badge.done{background:#dcf5e8;color:#0b7a4f}.badge.fail{background:#fde4e2;color:#c0392b}.badge.warn{background:#fff1d6;color:#a86500}
+  .tcdot{display:inline-block;width:16px;height:16px;border-radius:50%;flex:none;vertical-align:-2px;margin-right:6px}
+  header .tcdot{box-shadow:0 0 0 2px #fff}
+  .tcsw{display:flex;align-items:center;gap:10px;border:2px solid var(--line);background:#fff;border-radius:14px;padding:12px;font-size:17px;font-weight:700;text-align:left}
+  .tcsw.on{border-color:var(--ink)}
+  .tcsw .tcdot{width:26px;height:26px;margin:0}
   .trip{display:block;width:100%;text-align:left;border:0;background:#fff;border-radius:16px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.07)}
   .trip b{font-size:19px}
   .bar{height:8px;background:#eef1f3;border-radius:5px;overflow:hidden;margin-top:8px}
@@ -514,6 +519,7 @@ function show(view) {
   $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
   $('tabbar').classList.toggle('hide', view === 'pin' || view === 'pinedit');
   markTab(view);
+  paintTrip(view);
   if ($('mapWrap').classList.contains('hide') || view !== 'map') window.scrollTo(0, 0);
 }
 function markTab(view) {
@@ -623,7 +629,7 @@ function tabGo(t) {
 }
 /** 好幾趟都沒送完、又沒指定：列出來讓他點 */
 function chooseTrip(list, cb) {
-  sheet('<h2>要送哪一趟？</h2><div style="display:grid;gap:10px">' + list.map((x, i) => '<button class="btn sec" data-i="' + i + '" style="text-align:left"><b>' + esc(x.name) + '</b> <span class="badge ' + (x.shift === '下午' ? 'warn' : 'done') + '">' + esc(x.shift) + '</span>' +
+  sheet('<h2>要送哪一趟？</h2><div style="display:grid;gap:10px">' + list.map((x, i) => '<button class="btn sec" data-i="' + i + '" style="text-align:left;border-left:9px solid ' + tcOf(x) + '"><b>' + esc(x.name) + '</b> <span class="badge ' + (x.shift === '下午' ? 'warn' : 'done') + '">' + esc(x.shift) + '</span>' +
     '<div class="mut">' + esc(x.date.slice(5).replace('-', '/')) + ' · 剩 ' + (x.total - x.done - x.fail) + ' 家' + (x.driver ? ' · ' + esc(x.driver) : '') + '</div></button>').join('') + '</div>', (el, close) => {
     el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { close(); cb(list[+b.dataset.i].id); });
   });
@@ -801,7 +807,7 @@ function renderTrips() {
   {
     $('tripList').innerHTML = list.length ? list.map(t => {
       const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0, stp = homeStep(t);
-      return '<button class="trip" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
+      return '<button class="trip" style="border-left:9px solid ' + tcOf(t) + '" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
         (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div>' +
         (stp ? '<div style="margin-top:8px"><span class="steppill" role="button" onclick="stepGo(event,\'' + t.id + '\',\'' + stp.act + '\')">' + stp.label + ' ›</span></div>' : '<div class="mut" style="margin-top:6px;color:var(--g);font-weight:700">✓ 都處理完了</div>') +
@@ -972,6 +978,15 @@ function clientMenu(i) {
 
 /* ================= 行程 ================= */
 /** 行程標題：雲林・上午 */
+/** 行程顏色：同一天的行程各一個顏色，標題列、首頁卡片、導航畫面都帶著，才知道現在是哪一趟 */
+const TCOLORS = { 藍: '#2f7de1', 橘: '#e8871e', 紫: '#8e5bd6', 粉: '#d6559a', 紅: '#d94b4b', 黃: '#e0b000', 褐: '#8a6d3b', 鋼: '#5f7a8c' };   // 不用綠色：跟標題列的綠色分不出來
+const tcOf = t => (t && TCOLORS[t.color]) || '#c3cbd1';
+const tcDot = t => t && t.name === '待分配' ? '' : '<i class="tcdot" style="background:' + tcOf(t) + '"></i>';
+/** 看某一趟的畫面（清單、導航、地圖）：標題列下面一條那趟的顏色 */
+function paintTrip(view) {
+  const on = ST.trip && ST.trip.name !== '待分配' && ['trip', 'drive', 'map', 'pinedit'].indexOf(view) >= 0;
+  document.querySelectorAll('header').forEach(h => { h.style.borderBottom = on ? '9px solid ' + tcOf(ST.trip) : ''; });
+}
 const tripTitle = t => t.name === '待分配' ? '📥 待分配 ' + t.date.slice(5).replace('-', '/') : t.name + (t.shift && t.name.indexOf(t.shift) < 0 ? '・' + t.shift : '');   // 「星期一下午」不用再加・下午
 /** 沒送完的移到哪一趟：今天（或以後）上午 → 同一天下午；其他 → 明天上午（跟後端一樣） */
 function nextShiftLabel(t) {
@@ -985,7 +1000,8 @@ function setTrip(r) {
   if (!ST.trip || ST.trip.id !== r.trip.id) { ST.filter = 'all'; ST.sel = null; }
   ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r;
   const e = ST.trips && ST.trips.find(x => x.id === r.trip.id);   // 行程清單的家數跟著更新（導航用它判斷還有沒有沒送完的）
-  if (e) { e.total = r.stops.length; e.done = r.stops.filter(x => x.status === '已送達').length; e.fail = r.stops.filter(x => x.status === '沒送成').length; e.km = r.trip.km; e.planned = r.trip.planned; }
+  if (e) { e.total = r.stops.length; e.done = r.stops.filter(x => x.status === '已送達').length; e.fail = r.stops.filter(x => x.status === '沒送成').length; e.km = r.trip.km; e.planned = r.trip.planned; e.color = r.trip.color; }
+  if (ST.view) paintTrip(ST.view);
   saveSnap();
 }
 /** 手上有這一趟（剛看過）：先換過去 */
@@ -994,7 +1010,7 @@ function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r 
 function tripGone(e, id) { if (/找不到這個行程/.test((e && e.message) || String(e))) { delete TRIPS[id]; if (CUR.id === id) { toast('這趟已經被刪掉了'); backHome(); } } }
 function openTrip(id, fresh) {
   const done = () => {
-    $('hTitle').textContent = tripTitle(ST.trip); show('trip'); render();
+    $('hTitle').innerHTML = tcDot(ST.trip) + esc(tripTitle(ST.trip)); show('trip'); render();
     const a = ST.after; ST.after = null;   // 從首頁按「② 排路線」「① 加客戶」進來的：接著自動做
     if (a === 'add') addMenu(); else if (a === 'plan') quickPlan();
   };
@@ -1090,7 +1106,7 @@ function flagList(onlyId) {
 function render() {
   const t = ST.trip, ss = ST.stops;
   if (!t) return;
-  $('hTitle').textContent = tripTitle(t);
+  $('hTitle').innerHTML = tcDot(t) + esc(tripTitle(t));
   const isPool = t.name === '待分配';
   const planned = !!t.planned && ss.length > 0 && !isPool;
   $('poolHint').classList.toggle('hide', !isPool);
@@ -1458,6 +1474,7 @@ function tripMenu() {
   sheet('<h2>' + esc(t.name) + '</h2><div style="display:grid;gap:10px">' +
     (ST.stops.length ? '<button class="btn sec" data-a="sel">☑ 選多家（一次刪除、退回待分配）</button>' : '') +
     '<button class="btn sec" data-a="rename">✎ 改名稱、日期、上午／下午、司機、車牌</button>' +
+    '<button class="btn sec" data-a="color">' + tcDot(t) + '改這一趟的顏色（現在是' + esc(t.color || '灰') + '）</button>' +
     (left ? '<button class="btn sec" data-a="carry">📅 沒送完的 ' + left + ' 家移到' + nextShiftLabel(t) + '</button>' : '') +
     '<button class="btn sec" data-a="del" style="color:var(--red)">刪除這個行程</button></div>', (el, close) => {
     el.querySelectorAll('[data-a]').forEach(b => b.onclick = () => {
@@ -1465,8 +1482,23 @@ function tripMenu() {
       const a = b.dataset.a;
       if (a === 'sel') selMode();
       else if (a === 'rename') renameTrip();
+      else if (a === 'color') pickColor();
       else if (a === 'carry') carryOver();
       else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { delete TRIPS[t.id]; ST.trip = null; ST.trips = null; backHome(); });
+    });
+  });
+}
+/** 改行程顏色：同一天別趟已經在用的會寫出來，避免兩趟看起來一樣 */
+function pickColor() {
+  const t = ST.trip, others = (ST.trips || []).filter(x => x.id !== t.id && x.date === t.date && !x.pool);
+  sheet('<h2>' + tcDot(t) + '改顏色</h2><div class="mut" style="margin-bottom:10px">同一天的行程用不同顏色，一看就知道現在是哪一趟。</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">' +
+    Object.keys(TCOLORS).map(k => { const used = others.filter(x => x.color === k).map(x => x.name);
+      return '<button class="tcsw' + (t.color === k ? ' on' : '') + '" data-c="' + k + '"><i class="tcdot" style="background:' + TCOLORS[k] + '"></i><span class="grow">' + k + (t.color === k ? ' ✓' : '') +
+        (used.length ? '<div class="mut" style="font-size:13.5px;font-weight:400">' + esc(used[0]) + (used.length > 1 ? ' 等' : '') + '在用</div>' : '') + '</span></button>'; }).join('') + '</div>', (el, close) => {
+    el.querySelectorAll('[data-c]').forEach(b => b.onclick = () => {
+      close();
+      if (b.dataset.c === t.color) return;
+      call('updateTrip', { id: t.id, patch: { color: b.dataset.c } }, '儲存中…').then(r => { refresh(r); toast('已改成' + b.dataset.c + '色'); });
     });
   });
 }
@@ -1482,8 +1514,8 @@ function renameTrip() {
 }
 function carryOver() {
   const n = ST.stops.filter(s => s.status !== '已送達').length;
-  if (!confirm('把沒送完的 ' + n + ' 家複製到' + nextShiftLabel(ST.trip) + '？（這一趟不會動）')) return;
-  call('carryOver', { id: ST.trip.id }, '複製中…').then(r => { setTrip(r); toast('已移到「' + r.trip.date.slice(5).replace('-', '/') + ' ' + tripTitle(r.trip) + '」'); go({ v: 'trip', id: r.trip.id }); });
+  if (!confirm('把沒送完的 ' + n + ' 家移到' + nextShiftLabel(ST.trip) + '？（這一趟原本的紀錄不會動）')) return;
+  call('carryOver', { id: ST.trip.id }, '移動中…').then(r => { setTrip(r); toast('已移到「' + r.trip.date.slice(5).replace('-', '/') + ' ' + tripTitle(r.trip) + '」'); go({ v: 'trip', id: r.trip.id }); });
 }
 
 /* ================= 加客戶（一個按鈕，四種方法） ================= */
@@ -1711,7 +1743,7 @@ function renderDrive() {
   $('drTop').innerHTML = '';
   drClock();
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
-  $('drSum').innerHTML = '<div class="dr-head"><span style="font-size:20px">📦</span><b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
+  $('drSum').innerHTML = '<div class="dr-head">' + tcDot(t) + '<b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
     '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">🗺 地圖</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>' +
     '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
     '<div class="grow dr-right"><div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
@@ -2248,7 +2280,7 @@ async function ensureMap() {
 async function showMap() {
   PIN = null;
   show('map');
-  $('hTitle').textContent = tripTitle(ST.trip);
+  $('hTitle').innerHTML = tcDot(ST.trip) + esc(tripTitle(ST.trip));
   $('pinBar').classList.add('hide');
   $('mapWrap').classList.remove('full');
   $('mapTitle').textContent = ST.trip.name + '　地圖';
