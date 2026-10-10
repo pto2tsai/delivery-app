@@ -128,6 +128,7 @@
   .dr-big small{font-size:22px;color:#8a97a0;font-weight:600}
   .dr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
   .dr-eta{font-size:15px;text-align:right}
+  .nw{white-space:nowrap}
   .dr-cnt{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end}
   .dr-cnt button{border:0;background:none;padding:2px 0;font-size:15px;color:var(--mut);text-decoration:underline}
   .dr-cnt button.on{color:var(--ink);font-weight:800}
@@ -1715,8 +1716,8 @@ function renderDrive() {
     '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
     '<div class="grow dr-right"><div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
     cnt('skip', '#f5a623', paused.length, '晚點送') + cnt('todo', '#c7d0d6', todo.length, '待送') + '</div>' +
-    '<div class="mut dr-eta">' + (todo.length ? '剩 ' + leftKm + ' km' + (endEta ? ' · 預計 ' + endEta + ' 完成' : '') : pct + '% 完成') +
-    (delay > 5 && todo.length ? ' · <b style="color:var(--red)">晚 ' + fmtMin(delay) + '</b>' : delay < -5 && todo.length ? ' · <b style="color:var(--g)">早 ' + fmtMin(-delay) + '</b>' : '') + '</div></div></div>' +
+    '<div class="mut dr-eta">' + (todo.length ? '<span class="nw">剩 ' + leftKm + ' km</span>' + (endEta ? ' · <span class="nw">預計 ' + endEta + ' 完成</span>' : '') : '<span class="nw">' + pct + '% 完成</span>') +
+    (delay > 5 && todo.length ? ' · <b class="nw" style="color:var(--red)">晚 ' + fmtMin(delay) + '</b>' : delay < -5 && todo.length ? ' · <b class="nw" style="color:var(--g)">早 ' + fmtMin(-delay) + '</b>' : '') + '</div></div></div>' +
     '<div class="dr-prog"><i style="width:' + pct + '%"></i><b style="left:' + pct + '%"></b></div>';
   $('drCnt').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { D.f = D.f === b.dataset.f ? 'all' : b.dataset.f; renderDrive(); });
   // 清單：待送（照順序）→ 暫停 → 已完成
@@ -1728,7 +1729,7 @@ function renderDrive() {
   const j = D.just, js = j && ss.find(x => x.id === j.id);
   const justBar = js ? '<div class="dr-just ' + j.kind + '"><span class="grow">' + (j.kind === 'done' ? '✓ <b>' + esc(js.client || js.addr) + '</b> ' + doneHm(js) + ' 已送達' : j.kind === 'fail' ? '✗ <b>' + esc(js.client || js.addr) + '</b> 白跑了（' + esc(js.reason || '') + '）' : '⏸ <b>' + esc(js.client || js.addr) + '</b> 晚點送，排到最後') +
     '</span><button onclick="drUndo()">復原</button></div>' : '';
-  const backBar = D.back && target ? '<div class="dr-back">👋 回來了。' + (D.nav.ids.length > 1 ? '剛剛一起導航 ' + D.nav.ids.length + ' 家，現在是 <b>' + esc(target.client || target.addr) + '</b>：送完一家就按一家的 <b>✅ 完成</b>' : '到 <b>' + esc(target.client || target.addr) + '</b> 了嗎？送到就按下面的 <b>✅ 完成</b>') + '</div>' : '';
+  const backBar = D.back && target ? '<div class="dr-back">👋 回來了。' + (D.nav.ids.length > 1 ? '還剩 ' + D.nav.ids.length + ' 家，現在是 <b>' + esc(target.client || target.addr) + '</b>：送完一家就按一家的 <b>✅ 完成</b>' : '到 <b>' + esc(target.client || target.addr) + '</b> 了嗎？送到就按下面的 <b>✅ 完成</b>') + '</div>' : '';
   $('drList').innerHTML = backBar + justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0, !!(target && D.back && target.id === s.id))).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
   $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; D.auto = false; renderDrive(); });
   $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAddStops()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
