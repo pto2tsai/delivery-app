@@ -965,11 +965,10 @@ function dayRule(s, date) {
   while ((m = reC.exec(txt))) { m[1].split('').forEach(c => { if (WD.indexOf(c) >= 0) days.push(WD.indexOf(c)); }); hit = hit || m[0].replace(/\s+/g, ''); }
   const reS = /(?:週|周|星期)([一二三四五六日])\s*(?:才|再)?(?:配送|送貨|送)/g;   // 週二送
   while ((m = reS.exec(txt))) { days.push(WD.indexOf(m[1])); hit = hit || m[0].replace(/\s+/g, ''); }
-  // 客戶名稱後面的數字也是星期：廖桂榮4、吳雅玲-3、金泉3 -8（-8 不是星期，略過）、翁嘉琪1-3（一到三）
+  // 客戶名稱後面的數字也是星期：廖桂榮4、吳雅玲-3、金泉3 -8（-8 不是星期，略過）、翁嘉琪1-3（一和三）
   const name = (s.client || '').trim();
   if ((m = name.match(/(^|[^\d.])([1-6])\s*-\s*([1-6])(?![\d.])/))) {
-    const a = +m[2], b = +m[3];
-    if (a < b) for (let d = a; d <= b; d++) days.push(d); else days.push(a, b);
+    days.push(+m[2], +m[3]);   // 1-3＝星期一和星期三（不是一到三）
     hit = hit || m[2] + '-' + m[3];
   } else if ((m = name.match(/(^|[^\d.])([1-6])\s*-\s*\d{1,2}\s*$/))) { days.push(+m[2]); hit = hit || '名稱「' + name + '」的 ' + m[2]; }
   else if ((m = name.match(/(^|[^\d.])-?\s*([1-6])\s*$/))) { days.push(+m[2]); hit = hit || '名稱「' + name + '」最後的 ' + m[2]; }
