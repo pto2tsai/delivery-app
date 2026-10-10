@@ -1534,14 +1534,14 @@ function renderDrive() {
   const going = todo.filter(s => D.skip.indexOf(s.id) < 0), paused = D.skip.map(id => todo.find(s => s.id === id));
   const done = ss.filter(s => s.status === '已送達'), fail = ss.filter(s => s.status === '沒送成');
   const cur = going[0] || paused[0] || null;
-  if (!D.open || !ss.some(s => s.id === D.open)) D.open = cur && cur.id;
+  if (!D.open || !ss.some(s => s.id === D.open) || (D.auto && cur && D.open !== cur.id)) { D.open = cur && cur.id; D.auto = true; }   // 沒人點開別家時，展開的永遠是「目前這家」（辦公室插單、晚點送讓目前這家換人，也跟著換）
   // 導航回來：剛導航的那幾家還沒送的，才要提醒；都處理完就清掉
   if (D.nav) {
     D.nav.ids = D.nav.ids.filter(id => going.some(x => x.id === id));
     if (!D.nav.ids.length) { D.nav = null; D.back = false; lsSet(drKey('nav'), null); lsSet('dh_resume', null); }
   }
   const target = D.nav ? going.find(x => x.id === D.nav.ids[0]) : null;
-  if (D.back && target) D.open = target.id;   // 那一家展開著，完成就在眼前
+  if (D.back && target) { D.open = target.id; D.auto = false; }   // 那一家展開著，完成就在眼前
   const delay = drDelay(), fin = done.length + fail.length, pct = ss.length ? Math.round(fin / ss.length * 100) : 0;
   const leftKm = Math.round(todo.reduce((a, s) => a + (Number(s.legKm) || 0), 0) * 10) / 10;
   const lastTodo = todo.filter(s => s.eta).sort((a, b) => a.seq - b.seq).pop();
@@ -1572,7 +1572,7 @@ function renderDrive() {
     '</span><button onclick="drUndo()">復原</button></div>' : '';
   const backBar = D.back && target ? '<div class="dr-back">👋 回來了。' + (D.nav.ids.length > 1 ? '剛剛一起導航 ' + D.nav.ids.length + ' 家，現在是 <b>' + esc(target.client || target.addr) + '</b>：送完一家就按一家的 <b>✅ 完成</b>' : '到 <b>' + esc(target.client || target.addr) + '</b> 了嗎？送到就按下面的 <b>✅ 完成</b>') + '</div>' : '';
   $('drList').innerHTML = backBar + justBar + allDone + (list.length ? list.map(s => drCard(s, s === cur, D.open === s.id, delay, D.skip.indexOf(s.id) >= 0, !!(target && D.back && target.id === s.id))).join('') : '<div class="card mut" style="text-align:center">沒有</div>');
-  $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; renderDrive(); });
+  $('drList').querySelectorAll('[data-open]').forEach(b => b.onclick = () => { D.open = D.open === b.dataset.open ? '' : b.dataset.open; D.auto = false; renderDrive(); });
   $('drMore').innerHTML = (cur ? batchBtn(cur) : '') + '<p style="text-align:center"><button class="btn sec small" onclick="openAddStops()">🎤 路上加一家</button>　<button class="btn sec small" onclick="showHelp()">📖 怎麼用</button></p>';
 }
 function drCard(s, isCur, open, delay, paused, back) {
