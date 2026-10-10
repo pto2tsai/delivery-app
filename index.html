@@ -644,13 +644,15 @@ const doneHm = s => { const m = String(s.doneAt || '').match(/ (\d{1,2}):(\d{2})
 const badgeOf = s => s.status === '已送達' ? '<span class="badge done">已送達</span>' : s.status === '沒送成' ? '<span class="badge fail">沒送成</span>' : '<span class="badge">待送</span>';
 /** 電話欄可能有好幾支：撥第一支 */
 const telOf = p => esc(String(p).split(/[\/、,，]/)[0].replace(/[^\d+#]/g, ''));
-const mapsUrl = s => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + s.lat + ',' + s.lng;
+/** 這趟選了「最好走」：Google 地圖導航也避開國道、快速道路 */
+const avoidQ = t => t && t.pref === '最好走' ? '&avoid=tolls,highways' : '';
+const mapsUrl = (s, trip) => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + s.lat + ',' + s.lng + avoidQ(trip);
 /** Google 地圖一次最多 10 個點（9 個中途點＋目的地），從目前位置出發 */
 const NAV_MAX = 10;
 function batchUrl(list) {
   const pts = list.filter(s => s.lat !== '').slice(0, NAV_MAX), d = pts[pts.length - 1];
   return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + d.lat + ',' + d.lng +
-    (pts.length > 1 ? '&waypoints=' + pts.slice(0, -1).map(s => s.lat + ',' + s.lng).join('%7C') : '');
+    (pts.length > 1 ? '&waypoints=' + pts.slice(0, -1).map(s => s.lat + ',' + s.lng).join('%7C') : '') + avoidQ(ST.trip);
 }
 /** 接下來要送的（照順序、有位置的）；first 排第一個 */
 function nextBatch(first) {
@@ -1036,7 +1038,7 @@ function render() {
   const done = ss.filter(s => s.status === '已送達').length, fail = ss.filter(s => s.status === '沒送成').length;
   const pct = ss.length ? Math.round((done + fail) / ss.length * 100) : 0;
   $('planSum').innerHTML = isPool || !ss.length || re ? '' : planned
-    ? '<div class="mut" style="margin-top:6px;font-size:15.5px">✓ ' + ({ 自動最佳化: '系統排的', 自訂順序: '照我排的順序' }[t.plan] || t.plan) + ' · ' + t.depart + ' 出發 · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + (pct ? ' · ' + pct + '% 完成' : '') + '</div>' +
+    ? '<div class="mut" style="margin-top:6px;font-size:15.5px">✓ ' + ({ 自動最佳化: '系統排的', 自訂順序: '照我排的順序' }[t.plan] || t.plan) + ' · ' + (t.pref === '最好走' ? '最好走 · ' : '') + t.depart + ' 出發 · ' + (t.km || 0) + ' km · 開車 ' + fmtMin(t.min || 0) + (pct ? ' · ' + pct + '% 完成' : '') + '</div>' +
       '<div class="dr-head" style="padding:6px 0;border:0;font-size:15.5px"><a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">🗺 地圖</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>'
     : '<div class="mut" style="margin-top:6px;font-size:15.5px">還沒排路線 · ' + t.depart + ' 出發　<a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>';
   const noLoc = ss.filter(s => s.lat === '');
@@ -1255,7 +1257,10 @@ function openPlan() {
     '<label class="f">終點</label>' + ['回起點', '最後一家', '指定地址'].map(m => '<label class="opt"><input type="radio" name="em" value="' + m + '"' + (t.endMode === m ? ' checked' : '') + '><span>' +
       (m === '回起點' ? '回到起點' : m === '最後一家' ? '送完最後一家就結束' : '指定地址') + '</span></label>').join('') +
     '<input id="enIn" class="in" value="' + esc(t.end) + '" placeholder="終點地址">' +
-    (canPlan ? '<label class="f">路線規劃方式</label>' +
+    (canPlan ? '<label class="f">路線模式</label>' +
+      '<label class="opt"><input type="radio" name="pp" value="最快"' + (t.pref === '最好走' ? '' : ' checked') + '><span>最快<div class="mut">開車時間最短，可以走國道、快速道路</div></span></label>' +
+      '<label class="opt"><input type="radio" name="pp" value="最好走"' + (t.pref === '最好走' ? ' checked' : '') + '><span>最好走<div class="mut">避開國道、快速道路，走一般道路（可能比較久）；Google 地圖導航也一樣</div></span></label>' +
+      '<label class="f">順序</label>' +
       '<label class="opt"><input type="radio" name="pm" value="auto" checked><span>系統幫我排最順的路（推薦）</span></label>' +
       '<label class="opt"><input type="radio" name="pm" value="manual"><span>照送貨清單目前的順序</span></label>' : '') +
     '<p><button class="btn" id="pnGo">' + (canPlan ? (t.planned ? '儲存並重新規劃' : '儲存並規劃路線') : '儲存') + '</button></p>' +
@@ -1267,6 +1272,8 @@ function openPlan() {
       const sa = $('stIn').value.trim(), em = el.querySelector('input[name=em]:checked').value, ea = $('enIn').value.trim();
       const pf = el.querySelector('input[name=pf]:checked').value;
       let from = null, changed = patch.depart !== t.depart;
+      const pp = (el.querySelector('input[name=pp]:checked') || {}).value || t.pref;
+      if (pp !== t.pref) { patch.pref = pp; changed = true; }
       if (sa && sa !== t.start) {
         if (ST.home && sa === ST.home.addr) patch.start = ST.home;
         else { const g = (await call('geocode', { addrs: [sa] }, '查起點…'))[0]; if (!g.ok) { alert('找不到起點地址：' + sa); return; } patch.start = { addr: sa, lat: g.lat, lng: g.lng }; }
@@ -1295,7 +1302,7 @@ function openPlan() {
       let p = changed ? call('updateTrip', { id: t.id, patch }, '儲存中…').then(r => { refresh(r); return r; }) : Promise.resolve(null);
       if (plan) {
         const mode = (el.querySelector('input[name=pm]:checked') || {}).value || 'auto';
-        p.then(() => call('planRoute', { trip: t.id, mode, from }, '規劃路線中…（家數多要等十幾秒）')).then(r => { refresh(r); toast('路線規劃好了'); });
+        p.then(() => call('planRoute', { trip: t.id, mode, from, pref: pp }, '規劃路線中…（家數多要等十幾秒）')).then(r => { refresh(r); toast('路線規劃好了'); });
       } else if (changed) {
         p.then(r => { if (r && r.trip.planned) call('planRoute', { trip: r.trip.id, mode: 'manual' }, '重算時間…').then(refresh); });   // 預計到達跟著更新
       }
@@ -1314,7 +1321,7 @@ function stopMenu(id) {
     (s.orders ? '<div class="mut">訂單：' + esc(s.orders) + '</div>' : '') + (s.items ? '<div class="mut">品項：' + esc(s.items) + '</div>' : '') +
     (s.note ? '<div class="mut">備註：' + esc(s.note) + '</div>' : '') +
     '<div style="display:grid;gap:10px;margin-top:14px">' +
-    (s.lat !== '' ? '<a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + mapsUrl(s) + '">🧭 導航到這裡</a>' : '') +
+    (s.lat !== '' ? '<a class="btn" style="text-align:center;text-decoration:none" target="_blank" href="' + mapsUrl(s, ST.trip) + '">🧭 導航到這裡</a>' : '') +
     (s.phone ? '<a class="btn sec" style="text-align:center;text-decoration:none" href="tel:' + telOf(s.phone) + '">📞 打電話 ' + esc(s.phone) + '</a>' : '') +
     (s.status !== '已送達' ? '<button class="btn sec" data-a="done">✓ 標記已送達</button>' : '') +
     (s.status !== '沒送成' ? '<button class="btn sec" data-a="fail">✗ 標記沒送成</button>' : '') +
@@ -1665,7 +1672,7 @@ function drCard(s, isCur, open, delay, paused, back) {
     : (st === '已送達' ? '<b>✓ ' + doneHm(s) + ' 送達</b>' : '<b class="late">✗ ' + doneHm(s) + ' 沒送成' + (s.reason ? '（' + esc(s.reason) + '）' : '') + '</b>');
   // 導航放卡片右上角（跟店名同一行）；沒位置、已經送完的顯示展開箭頭
   const again = ST.drive && ST.drive.nav && ST.drive.nav.ids.indexOf(s.id) >= 0;   // 導航過了：按鈕改成「再導航」
-  const nav = st === '待送' && s.lat !== '' ? '<a class="dr-nav nav" target="_blank" href="' + mapsUrl(s) + '" onclick="driveNav(\'' + s.id + '\')"><i>' + (again ? '↻' : '➤') + '</i>' + (again ? '再導航' : '導航') + '</a>' : '';
+  const nav = st === '待送' && s.lat !== '' ? '<a class="dr-nav nav" target="_blank" href="' + mapsUrl(s, ST.trip) + '" onclick="driveNav(\'' + s.id + '\')"><i>' + (again ? '↻' : '➤') + '</i>' + (again ? '再導航' : '導航') + '</a>' : '';
   let h = '<div class="dr-card' + (isCur ? ' cur' : '') + (st !== '待送' ? ' fin' : '') + (back ? ' back' : '') + '">' + nav + '<button class="dr-row' + (nav ? ' has-nav' : '') + '" data-open="' + s.id + '">' + no +
     '<span class="grow"><div class="dr-name client">' + esc(s.client || s.addr) + '</div>' + (s.client ? '<div class="mut addr">' + esc(s.addr) + fixTag + '</div>' : fixTag) +
     '<div class="dr-meta">' + meta + '</div></span>' + (nav ? '' : '<span class="mut" style="font-size:22px;line-height:1">' + (open ? '︿' : '﹀') + '</span>') + '</button>';
@@ -2180,7 +2187,7 @@ async function showMap() {
     const cls = s.status === '已送達' ? 'done' : s.status === '沒送成' ? 'fail' : '';
     L.marker([s.lat, s.lng], { icon: icon(s.seq, cls) }).addTo(LAYER)
       .bindPopup('<b>' + s.seq + '. ' + esc(s.client) + '</b><br>' + esc(s.addr) + '<br>' + badgeOf(s) + (s.geo === '約略' ? ' <span class="badge warn">位置不準</span>' : '') + ' ' + twTag(s, true) +
-        '<br><a target="_blank" href="' + mapsUrl(s) + '">🧭 導航到這裡</a>　<a href="#" onclick="editPin(\'' + s.id + '\');return false">📍 修正位置</a>');
+        '<br><a target="_blank" href="' + mapsUrl(s, ST.trip) + '">🧭 導航到這裡</a>　<a href="#" onclick="editPin(\'' + s.id + '\');return false">📍 修正位置</a>');
     pts.push([s.lat, s.lng]);
   });
   const end = t.line && t.line.end;
