@@ -562,23 +562,43 @@ function route(st) {
 /** 導航列：地圖、送貨用「目前這趟」（最後打開的行程；沒有就找最近一趟還沒送完的） */
 function tabGo(t) {
   if (ROOTS.indexOf(t) >= 0) { go({ v: t }); return; }
+  const drive = t === 'drive';
   const open = trip => {
-    if (t === 'drive' && !trip.planned) { go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「③ 開始導航」', 3000); return; }
+    if (drive && !trip.planned) { go({ v: 'trip', id: trip.id }); toast('先排好路線，再按「③ 開始導航」', 3000); return; }
     go({ v: t, id: trip.id });
   };
-  // 手上這趟：不是待分配（辦公室的）；按「導航」時還要有沒送的（送完了就找下一趟）
-  const useCur = ST.trip && ST.trip.name !== '待分配' && (t !== 'drive' || ST.stops.some(s => s.status === '待送'));
-  if (useCur) {
-    // 手上的還沒排路線：先拿最新的再決定（可能辦公室剛幫他排好）
-    if (t === 'drive' && !ST.trip.planned) { call('getTrip', { id: ST.trip.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
-    open(ST.trip); return;
+  // 手上有的先用（不用問系統）；沒有才去拿
+  const openId = id => {
+    if (useCached(id) && !(drive && !ST.trip.planned)) { open(ST.trip); return; }   // 手上的還沒排路線：先拿最新的（可能辦公室剛排好）
+    call('getTrip', { id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); });
+  };
+  // 手上這趟：不是待分配（辦公室的）；按「導航」時還要有沒送的
+  const cur = ST.trip && ST.trip.name !== '待分配' ? ST.trip : null;
+  if (cur && (!drive || ST.stops.some(s => s.status === '待送'))) {
+    // 還沒排路線：先拿最新的再決定（可能辦公室剛幫他排好）
+    if (drive && !cur.planned) { call('getTrip', { id: cur.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
+    open(cur); return;
   }
-  call('listTrips', {}, ST.trips ? false : '找目前的行程…').then(list => {
-    list = list.filter(x => !x.pool);
-    const t0 = list.find(x => x.total > x.done + x.fail) || (ST.trip && ST.trip.name !== '待分配' ? list.find(x => x.id === ST.trip.id) : null) || list[0];   // 都送完了：留在手上這趟
-    if (!t0) { toast('還沒有行程，先到「行程」新增一趟'); return; }
-    if (useCached(t0.id) && !(t === 'drive' && !ST.trip.planned)) { open(ST.trip); return; }
-    call('getTrip', { id: t0.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); });
+  const pick = (list, fresh) => {
+    const real = list.filter(x => !x.pool), act = real.filter(x => x.total > x.done + x.fail);
+    if (!drive) {   // 地圖：最近一趟
+      if (!real.length) { toast('還沒有行程，先到「行程」新增一趟'); return; }
+      openId((act[0] || real[0]).id); return;
+    }
+    if (act.length === 1) { openId(act[0].id); return; }
+    if (act.length > 1) { chooseTrip(act, openId); return; }   // 好幾趟都沒送完：問要送哪一趟
+    if (!fresh) { call('listTrips', {}, '確認行程…').then(l => { ST.trips = l; pick(l, true); }); return; }   // 手上的清單說沒有：跟系統確認一次
+    toast('目前沒有要送的行程。到「行程」新增一趟，或選一趟沒送完的', 4500);   // 送完的不用再開一次
+    go({ v: 'home' });
+  };
+  if (ST.trips) pick(ST.trips, false);
+  else call('listTrips', {}, '找目前的行程…').then(l => { ST.trips = l; pick(l, true); });
+}
+/** 好幾趟都沒送完、又沒指定：列出來讓他點 */
+function chooseTrip(list, cb) {
+  sheet('<h2>要送哪一趟？</h2><div style="display:grid;gap:10px">' + list.map((x, i) => '<button class="btn sec" data-i="' + i + '" style="text-align:left"><b>' + esc(x.name) + '</b> <span class="badge ' + (x.shift === '下午' ? 'warn' : 'done') + '">' + esc(x.shift) + '</span>' +
+    '<div class="mut">' + esc(x.date.slice(5).replace('-', '/')) + ' · 剩 ' + (x.total - x.done - x.fail) + ' 家' + (x.driver ? ' · ' + esc(x.driver) : '') + '</div></button>').join('') + '</div>', (el, close) => {
+    el.querySelectorAll('[data-i]').forEach(b => b.onclick = () => { close(); cb(list[+b.dataset.i].id); });
   });
 }
 function closeSheets() { document.querySelectorAll('.sheet-bg').forEach(b => b.remove()); }
@@ -897,7 +917,13 @@ function nextShiftLabel(t) {
 const TRIPS = {};   // 看過的行程先留著：切換時馬上顯示，背景再拿最新的
 /** 從清單點一趟進去：一律先看「送貨清單」 */
 function openT(id) { go({ v: 'trip', id }); }
-function setTrip(r) { if (!ST.trip || ST.trip.id !== r.trip.id) { ST.filter = 'all'; ST.sel = null; } ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r; saveSnap(); }
+function setTrip(r) {
+  if (!ST.trip || ST.trip.id !== r.trip.id) { ST.filter = 'all'; ST.sel = null; }
+  ST.trip = r.trip; ST.stops = r.stops; TRIPS[r.trip.id] = r;
+  const e = ST.trips && ST.trips.find(x => x.id === r.trip.id);   // 行程清單的家數跟著更新（導航用它判斷還有沒有沒送完的）
+  if (e) { e.total = r.stops.length; e.done = r.stops.filter(x => x.status === '已送達').length; e.fail = r.stops.filter(x => x.status === '沒送成').length; e.km = r.trip.km; e.planned = r.trip.planned; }
+  saveSnap();
+}
 /** 手上有這一趟（剛看過）：先換過去 */
 function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r = TRIPS[id]; if (!r) return false; setTrip(r); return true; }
 /** 行程被刪掉了：回首頁 */
