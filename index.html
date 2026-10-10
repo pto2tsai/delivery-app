@@ -126,11 +126,13 @@
   .dr-head a{color:var(--mut);text-decoration:underline;font-size:15px}
   .dr-big{font-size:46px;font-weight:900;line-height:1}
   .dr-big small{font-size:22px;color:#8a97a0;font-weight:600}
+  .dr-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+  .dr-eta{font-size:15px;text-align:right}
   .dr-cnt{display:flex;gap:12px;flex-wrap:wrap;justify-content:flex-end}
   .dr-cnt button{border:0;background:none;padding:2px 0;font-size:15px;color:var(--mut);text-decoration:underline}
   .dr-cnt button.on{color:var(--ink);font-weight:800}
   .dr-cnt i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px}
-  .dr-prog{position:relative;height:8px;background:#eef1f3;border-radius:5px;margin:14px 0 10px}
+  .dr-prog{position:relative;height:8px;background:#eef1f3;border-radius:5px;margin:14px 0 4px}
   .dr-prog i{position:absolute;left:0;top:0;bottom:0;background:var(--g2);border-radius:5px}
   .dr-prog b{position:absolute;top:50%;width:18px;height:18px;margin:-9px 0 0 -9px;border-radius:50%;background:#fff;border:3.5px solid var(--ink)}
   .dr-card{background:#fff;border:1.5px solid #e1e6ea;border-radius:16px;margin-bottom:10px;overflow:hidden}
@@ -1684,12 +1686,12 @@ function renderDrive() {
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
   $('drSum').innerHTML = '<div class="dr-head"><span style="font-size:20px">📦</span><b class="grow" style="font-size:18px">' + esc(tripTitle(t)) + '</b>' +
     '<a href="javascript:void 0" onclick="go({ v: \'map\', id: ST.trip.id })">🗺 地圖</a><span class="mut">·</span><a href="javascript:void 0" onclick="openPlan()">路徑規劃選項</a></div>' +
-    '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big grow">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
-    '<div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
-    cnt('skip', '#f5a623', paused.length, '晚點送') + cnt('todo', '#c7d0d6', todo.length, '待送') + '</div></div>' +
-    '<div class="dr-prog"><i style="width:' + pct + '%"></i><b style="left:' + pct + '%"></b></div>' +
-    '<div class="mut" style="font-size:15.5px">📈 ' + pct + '% 完成' + (todo.length ? ' · 剩 ' + leftKm + ' km' + (endEta ? ' · 預計 ' + endEta + ' 完成' : '') : '') +
-    (delay > 5 && todo.length ? ' · <b style="color:var(--red)">晚 ' + fmtMin(delay) + '</b>' : delay < -5 && todo.length ? ' · <b style="color:var(--g)">早 ' + fmtMin(-delay) + '</b>' : '') + '</div>';
+    '<div class="row" style="margin-top:14px;align-items:flex-end"><div class="dr-big">' + Math.min(fin + 1, ss.length) + '<small> /' + ss.length + ' 站</small></div>' +
+    '<div class="grow dr-right"><div class="dr-cnt" id="drCnt">' + cnt('done', 'var(--g2)', done.length, '完成') + (fail.length ? cnt('fail', 'var(--red)', fail.length, '沒送成') : '') +
+    cnt('skip', '#f5a623', paused.length, '晚點送') + cnt('todo', '#c7d0d6', todo.length, '待送') + '</div>' +
+    '<div class="mut dr-eta">' + (todo.length ? '剩 ' + leftKm + ' km' + (endEta ? ' · 預計 ' + endEta + ' 完成' : '') : pct + '% 完成') +
+    (delay > 5 && todo.length ? ' · <b style="color:var(--red)">晚 ' + fmtMin(delay) + '</b>' : delay < -5 && todo.length ? ' · <b style="color:var(--g)">早 ' + fmtMin(-delay) + '</b>' : '') + '</div></div></div>' +
+    '<div class="dr-prog"><i style="width:' + pct + '%"></i><b style="left:' + pct + '%"></b></div>';
   $('drCnt').querySelectorAll('[data-f]').forEach(b => b.onclick = () => { D.f = D.f === b.dataset.f ? 'all' : b.dataset.f; renderDrive(); });
   // 清單：待送（照順序）→ 暫停 → 已完成
   let list = going.concat(paused, ss.filter(s => s.status !== '待送').sort((a, b) => (a.doneAt < b.doneAt ? 1 : -1)));
