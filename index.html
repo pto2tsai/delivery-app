@@ -167,6 +167,12 @@
   .selrow input{width:26px;height:26px;flex:none;accent-color:var(--g)}
   .selbar{position:fixed;left:0;right:0;bottom:calc(62px + max(2px, calc(env(safe-area-inset-bottom) - 12px)));z-index:44;background:#fff;border-top:1px solid var(--line);box-shadow:0 -2px 10px rgba(0,0,0,.08);padding:10px 14px;display:flex;gap:8px;align-items:center}
   .selbar .btn{width:auto;padding:10px 14px;font-size:16px}
+  .stepbar{display:flex;align-items:center;gap:6px;margin:0 0 10px;font-size:15px;font-weight:800;color:#8a949c}
+  .stepbar:empty{display:none}
+  .stp.now{color:#fff;background:var(--g);border-radius:14px;padding:3px 11px}
+  .stp.ok{color:var(--g)}
+  .stpl{flex:1;height:2px;background:#d5dce0;min-width:8px}
+  .steppill{display:inline-block;background:var(--g);color:#fff;border-radius:16px;padding:7px 14px;font-weight:800;font-size:16px}
   #nextBar .btn,#homeBar .btn{width:100%;padding:15px 14px;font-size:20px}
   #stFilter .chip{padding:6px 10px;font-size:15px;white-space:nowrap}
   .tipline{display:flex;align-items:center;gap:8px;border-radius:10px;padding:6px 8px 6px 12px;margin-top:8px;font-size:15.5px;font-weight:700}
@@ -203,7 +209,7 @@
 <body>
 
 <header id="hdr">
-  <button class="hbtn hide" id="hBack" onclick="goBack()">‹ 返回</button>
+  <button class="hbtn hide" id="hBack" onclick="goUp()">‹ 返回</button>
   <h1 id="hTitle">送貨助手</h1>
   <span id="hRight" style="min-width:60px"></span>
 </header>
@@ -302,6 +308,7 @@
 <!-- 行程 -->
 <main id="vTrip" class="hide">
   <div id="pList">
+    <div id="stepBar" class="stepbar"></div>
     <div id="poolHint" class="tipline warn hide"><span class="grow">📥 待分配：司機自己挑，挑走的就不在這裡</span><button class="tipq" onclick="tipHelp('pool')" aria-label="說明">？</button></div>
     <button class="btn" id="addBtn" style="margin-bottom:12px;padding:16px;font-size:19px" onclick="addMenu()"><span style="opacity:.85;font-size:15px">① </span>＋ 加客戶</button>
     <div class="card">
@@ -352,7 +359,7 @@
 </main>
 
 <div id="mapWrap" class="hide">
-  <header><button class="hbtn" onclick="goBack()">‹ 返回</button><h1 id="mapTitle">路線預覽</h1><span style="min-width:60px"></span></header>
+  <header><button class="hbtn" id="mapBack" onclick="goUp()">‹ 返回</button><h1 id="mapTitle">路線預覽</h1><span style="min-width:60px"></span></header>
   <div id="map"></div>
   <div id="pinBar" class="hide">
     <div id="pinWho" style="font-weight:700"></div>
@@ -478,12 +485,28 @@ function toast(m, ms, act) {
   t.classList.remove('hide'); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add('hide'), ms || 2600);
 }
 const ROOTS = ['home', 'clients', 'admin', 'settings'];   // 導航列直接到的頁面（沒有「返回」）
+/* 返回鍵：每一頁都有固定的「上一層」，鍵上寫著名字，按下去就是那一頁（不用猜會跑去哪） */
+const UP = { trip: 'home', drive: 'trip', map: 'trip', import: 'admin', board: 'admin', report: 'admin' };
+const UPNAME = { home: '行程', trip: '清單', admin: '後台' };
+/** 這一頁的上一層：待分配（辦公室匯入的）從後台來就回後台，從首頁的提醒進來就回行程 */
+function upOf(v) {
+  if (v === 'trip' && ST.trip && ST.trip.name === '待分配') return PREV && PREV.v === 'home' ? 'home' : 'admin';
+  return UP[v];
+}
+function goUp() {
+  const v = ST.view, up = upOf(v), id = ST.trip && ST.trip.id;
+  if (!up || (up === 'trip' && !id)) { goBack(); return; }
+  const st = up === 'trip' ? { v: 'trip', id } : { v: up };
+  if (PREV && PREV.v === up && PREV.id === st.id && CUR.v === v) goBack();   // 剛好是從那一頁來的：用返回，歷史不會越疊越多
+  else { navReplace(st); route(st); }
+}
 function show(view) {
   if (view !== 'drive') $('hRight').innerHTML = '';
   if (view !== 'trip') { ST.sel = null; if (ST.reorder) { ST.reorder = null; $('reBar').classList.add('hide'); } }   // 離開這一頁：不再選取、不再調整順序
   ST.view = view;
   ['vPin', 'vHome', 'vTrip', 'vImport', 'vDrive', 'vClients', 'vSettings', 'vAdmin', 'vBoard', 'vReport'].forEach(v => $(v).classList.toggle('hide', v !== 'v' + view[0].toUpperCase() + view.slice(1)));
   $('hBack').classList.remove('hide');
+  $('hBack').textContent = $('mapBack').textContent = '‹ ' + (upOf(view) ? UPNAME[upOf(view)] : '返回');   // 返回鍵上直接寫要回哪一頁
   $('hBack').style.visibility = view === 'pin' || ROOTS.indexOf(view) >= 0 ? 'hidden' : '';   // 佔位，標題才會置中
   $('tabbar').classList.toggle('hide', view === 'pin' || view === 'pinedit');
   markTab(view);
@@ -744,6 +767,19 @@ function loadHome(noFetch) {
 }
 /** 待配送：還有沒送的；已完成：每一家都按過已送達或沒送成 */
 function homeTab(t) { ST.homeTab = t; renderTrips(); }
+/** 這趟現在該做哪一步：首頁每一趟寫在卡片上，按下去直接做（卡片其他地方＝打開這趟看清單） */
+function homeStep(t) {
+  const todo = t.total - t.done - t.fail;
+  if (t.total === 0) return { label: '① 加客戶', act: 'add' };
+  if (!t.planned) return { label: '② 排路線', act: 'plan' };
+  if (todo > 0) return { label: t.done + t.fail ? '▶ 繼續導航　剩 ' + todo + ' 家' : '③ 開始導航 ▶', act: 'drive' };
+  return null;
+}
+function stepGo(ev, id, act) {
+  ev.stopPropagation();
+  if (act === 'drive') go({ v: 'drive', id });
+  else { ST.after = act; openT(id); }   // 打開那一趟，接著自動做（跳出加客戶選單／直接排路線）
+}
 function renderTrips() {
   const pools = (ST.trips || []).filter(t => t.pool && t.total > t.done + t.fail);
   const all = (ST.trips || []).filter(t => !t.pool), t0 = ST.homeTab || 'todo';
@@ -757,10 +793,12 @@ function renderTrips() {
   $('hmDone').textContent = '已完成 ' + all.filter(isDone).length;
   {
     $('tripList').innerHTML = list.length ? list.map(t => {
-      const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0;
+      const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0, stp = homeStep(t);
       return '<button class="trip" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
-        (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div><div class="bar"><i style="width:' + pct + '%"></i></div></button>';
+        (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div>' +
+        (stp ? '<div style="margin-top:8px"><span class="steppill" role="button" onclick="stepGo(event,\'' + t.id + '\',\'' + stp.act + '\')">' + stp.label + ' ›</span></div>' : '<div class="mut" style="margin-top:6px;color:var(--g);font-weight:700">✓ 都處理完了</div>') +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div></button>';
     }).join('') : '<div class="card mut" style="text-align:center">' + (t0 === 'done' ? '還沒有送完的行程。' : all.length ? '都送完了 👍 送完的在「已完成」。' : '還沒有行程，按下面「新增行程」開始。') + '</div>';
   }
 }
@@ -931,7 +969,11 @@ function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r 
 /** 行程被刪掉了：回首頁 */
 function tripGone(e, id) { if (/找不到這個行程/.test((e && e.message) || String(e))) { delete TRIPS[id]; if (CUR.id === id) { toast('這趟已經被刪掉了'); backHome(); } } }
 function openTrip(id, fresh) {
-  const done = () => { $('hTitle').textContent = tripTitle(ST.trip); show('trip'); render(); };
+  const done = () => {
+    $('hTitle').textContent = tripTitle(ST.trip); show('trip'); render();
+    const a = ST.after; ST.after = null;   // 從首頁按「② 排路線」「① 加客戶」進來的：接著自動做
+    if (a === 'add') addMenu(); else if (a === 'plan') quickPlan();
+  };
   if (fresh && useCached(id)) { done(); call('getTrip', { id }, false).then(r => { if (ST.trip && ST.trip.id === id && !ST.reorder) refresh(r); }, e => tripGone(e, id)); return; }   // 先用手上的，背景再拿最新的（辦公室插單也看得到）
   call('getTrip', { id }, '讀取行程…').then(r => {
     if (CUR.v !== 'trip' || CUR.id !== id) return;   // 等的時候已經換到別頁了
@@ -1048,6 +1090,9 @@ function render() {
   const tip = (cls, txt, help) => '<div class="tipline ' + cls + '"><span class="grow">' + txt + '</span><button class="tipq" onclick="tipHelp(\'' + help + '\')" aria-label="說明">？</button></div>';
   FLAGMAP = isPool || re ? {} : flagMap(ss, t);
   if (!isPool && ss.length) loadClash(t, ss.length);
+  // 最上面一條：① 加客戶 → ② 排路線 → ③ 導航，做完的打勾、現在這一步反白
+  const stepNow = [ss.length > 0, planned, ss.length > 0 && !ss.some(s => s.status === '待送')], cur0 = stepNow.findIndex(x => !x);
+  $('stepBar').innerHTML = isPool ? '' : ['① 加客戶', '② 排路線', '③ 導航'].map((n, i) => '<span class="stp' + (stepNow[i] ? ' ok' : i === cur0 ? ' now' : '') + '">' + (stepNow[i] ? '✓ ' : '') + n + '</span>').join('<i class="stpl"></i>');
   const nFlag = Object.keys(FLAGMAP).length;
   $('listWarn').innerHTML = re ? '' : (nFlag ? '<div class="tipline warn"><span class="grow">⚠ ' + nFlag + ' 家今天可能不用送</span><button class="selbtn" onclick="flagList()">處理</button></div>' : '') + (noLoc.length ? tip('fail', '⚠ ' + noLoc.length + ' 家找不到位置', 'noloc') : '') + (rough.length ? tip('warn', '⚠ ' + rough.length + ' 家位置不準', 'rough') : '') +
     (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') +
@@ -1633,7 +1678,7 @@ function renderDrive() {
   const endEta = lastTodo ? m2hm(hm2m(lastTodo.eta) + delay + 10) : '';
   // 上面只留一條：‹ 返回 ／ 配送中 計時 ／ 結束
   $('hTitle').innerHTML = '<span class="dr-pill"><i></i><span id="drClock"></span></span>';
-  $('hRight').innerHTML = '<button class="dr-end" onclick="driveEnd()">結束</button>';
+  $('hRight').innerHTML = '';   // 要離開就按左上角「‹ 清單」，不另外放「結束」
   $('drTop').innerHTML = '';
   drClock();
   const cnt = (f, color, n, label) => '<button data-f="' + f + '"' + (D.f === f ? ' class="on"' : '') + '><i style="background:' + color + '"></i>' + n + ' ' + label + '</button>';
