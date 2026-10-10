@@ -946,6 +946,72 @@ function tipHelp(k) { const t = TIPS[k]; sheet('<h2>' + t[0] + '</h2><div style=
 function refresh(r) { setTrip(r); render(); if (ST.view === 'drive') renderDrive(); }
 function endLabel(t) { return t.endMode === '最後一家' ? '送完就結束' : t.endMode === '指定地址' ? (t.end || '（未設定）') : '回到起點'; }
 
+/* ================= 今天可能不用送（提醒，不強制） =================
+ * ① 名稱或備註寫了哪幾天才送（2.4.6、二.四送、週二四六送）、哪天休息（週一公休、週二不配送），跟這趟的星期幾對不上
+ * ② 同一天、同一個地址，也在別趟的清單裡
+ * 只提醒待送的；看了說「都要送」就記在這支手機，不再提醒
+ */
+let FLAGMAP = {};
+function dayRule(s, date) {
+  const wd = new Date(date + 'T00:00:00').getDay();
+  const txt = (s.client || '') + ' ' + (s.note || '');
+  let m;
+  const reOff = /(?:週|周|星期|禮拜)([一二三四五六日])\s*(?:全天)?\s*(?:公休|休息|休市|不配送|不送貨|不送|不收貨|不收|休)/g;
+  while ((m = reOff.exec(txt))) if (WD.indexOf(m[1]) === wd) return { why: '寫了「' + m[0].replace(/\s+/g, '') + '」，今天是星期' + WD[wd] };
+  const days = []; let hit = '';
+  const reD = /(^|[^\d.])([1-6](?:[.．、,，][1-6])+)(?![\d.]|公|斤|噸|吨|件|箱|元|%|kg|KG|度)/g;   // 2.4.6
+  while ((m = reD.exec(txt))) { m[2].split(/[.．、,，]/).forEach(n => days.push(+n)); hit = hit || m[2]; }
+  const reC = /(?:週|周|星期)?([一二三四五六日](?:[.．、,，]?[一二三四五六日])+)\s*(?:再)?(?:配送|送貨|送)/g;   // 二.四送
+  while ((m = reC.exec(txt))) { m[1].split('').forEach(c => { if (WD.indexOf(c) >= 0) days.push(WD.indexOf(c)); }); hit = hit || m[0].replace(/\s+/g, ''); }
+  const reS = /(?:週|周|星期)([一二三四五六日])\s*(?:才|再)?(?:配送|送貨|送)/g;   // 週二送
+  while ((m = reS.exec(txt))) { days.push(WD.indexOf(m[1])); hit = hit || m[0].replace(/\s+/g, ''); }
+  if (days.length && days.indexOf(wd) < 0) {
+    const u = days.filter((d, i) => days.indexOf(d) === i).sort((a, b) => a - b);
+    return { why: '寫了「' + hit + '」，看起來是星期' + u.map(d => WD[d]).join('、') + '才送，今天是星期' + WD[wd] };
+  }
+  return null;
+}
+function flagMap(ss, t) {
+  const ok = lsGet('dh_ok', {}), out = {};
+  ss.forEach(s => {
+    if (s.status !== '待送' || ok[s.id]) return;
+    const r = dayRule(s, t.date), c = ST.clash && ST.clash.trip === t.id && ST.clash.map[s.id], list = [];
+    if (r) list.push({ short: '今天不送？', why: r.why });
+    if (c) list.push({ short: '別趟也有', why: '今天也在「' + c.trip + '」' + (c.status === '已送達' ? '（那邊已經送達了）' : '的清單裡') });
+    if (list.length) out[s.id] = list;
+  });
+  return out;
+}
+/** 同一天別趟有沒有同一家：行程內容有變才問系統一次，背景拿 */
+function loadClash(t, n) {
+  if (ST.clash && ST.clash.trip === t.id && ST.clash.n === n) return;
+  ST.clash = { trip: t.id, n, map: ST.clash && ST.clash.trip === t.id ? ST.clash.map : {} };
+  call('clash', { trip: t.id }, false).then(list => {
+    if (!ST.clash || ST.clash.trip !== t.id) return;
+    ST.clash.map = {}; list.forEach(x => { ST.clash.map[x.stop] = x; });
+    if (ST.view === 'trip' && ST.trip && ST.trip.id === t.id && !ST.sel && !ST.reorder) render();
+  }, () => {});
+}
+function flagList(onlyId) {
+  const rows = Object.keys(FLAGMAP).filter(id => !onlyId || id === onlyId).map(id => ST.stops.find(s => s.id === id)).filter(Boolean);
+  if (!rows.length) return;
+  const pick = {};
+  sheet('<h2>⚠ 今天可能不用送（' + rows.length + ' 家）</h2><div class="mut">不用送的勾起來移除；都要送就按「都要送」，以後不再提醒。</div><div style="margin:8px 0">' +
+    rows.map((s, i) => '<label class="prev row" style="align-items:flex-start"><input type="checkbox" data-i="' + i + '"><div class="grow"><b style="font-size:17px">' + esc(s.client || s.addr) + '</b><div class="mut">' + esc(s.addr) + '</div>' +
+      FLAGMAP[s.id].map(f => '<div style="color:#8a5a00;font-size:15.5px">⚠ ' + esc(f.why) + '</div>').join('') + '</div></label>').join('') + '</div>' +
+    '<p><button class="btn" id="fgDel" style="background:var(--red)" disabled>移除勾選的</button></p><p><button class="btn sec" id="fgKeep">都要送，不再提醒</button></p>', (el, close) => {
+    const del = el.querySelector('#fgDel'), upd = () => { const n = Object.keys(pick).length; del.disabled = !n; del.textContent = n ? '移除勾選的 ' + n + ' 家' : '移除勾選的'; };
+    el.querySelectorAll('[data-i]').forEach(b => b.onchange = () => { if (b.checked) pick[b.dataset.i] = 1; else delete pick[b.dataset.i]; upd(); });
+    del.onclick = () => {
+      const ids = Object.keys(pick).map(i => rows[+i].id);
+      if (!ids.length || !confirm('確定移除這 ' + ids.length + ' 家？')) return;
+      close();
+      call('deleteStop', { ids, trip: ST.trip.id }, '移除中…').then(r => { refresh(r); toast('已移除 ' + ids.length + ' 家'); });
+    };
+    el.querySelector('#fgKeep').onclick = () => { const ok = lsGet('dh_ok', {}); rows.forEach(s => { ok[s.id] = 1; }); lsSet('dh_ok', ok); close(); render(); toast('好，這' + (rows.length > 1 ? ' ' + rows.length + ' 家' : '一家') + '不再提醒'); };
+  });
+}
+
 function render() {
   const t = ST.trip, ss = ST.stops;
   if (!t) return;
@@ -971,7 +1037,10 @@ function render() {
   const late = planned ? ss.filter(isLate) : [];
   // 一行就好，要看說明按「？」（不佔版面）
   const tip = (cls, txt, help) => '<div class="tipline ' + cls + '"><span class="grow">' + txt + '</span><button class="tipq" onclick="tipHelp(\'' + help + '\')" aria-label="說明">？</button></div>';
-  $('listWarn').innerHTML = re ? '' : (noLoc.length ? tip('fail', '⚠ ' + noLoc.length + ' 家找不到位置', 'noloc') : '') + (rough.length ? tip('warn', '⚠ ' + rough.length + ' 家位置不準', 'rough') : '') +
+  FLAGMAP = isPool || re ? {} : flagMap(ss, t);
+  if (!isPool && ss.length) loadClash(t, ss.length);
+  const nFlag = Object.keys(FLAGMAP).length;
+  $('listWarn').innerHTML = re ? '' : (nFlag ? '<div class="tipline warn"><span class="grow">⚠ ' + nFlag + ' 家今天可能不用送</span><button class="selbtn" onclick="flagList()">處理</button></div>' : '') + (noLoc.length ? tip('fail', '⚠ ' + noLoc.length + ' 家找不到位置', 'noloc') : '') + (rough.length ? tip('warn', '⚠ ' + rough.length + ' 家位置不準', 'rough') : '') +
     (late.length ? '<div class="warnbox" style="background:#fde4e2;border-color:#f3a59e">⚠ 有 ' + late.length + ' 家可能趕不上指定時間（' + late.map(s => esc(s.client || s.addr) + ' 要 ' + s.close + ' 前').join('、') + '）。可以提早出發時間，或手動調整順序。</div>' : '') +
     (planned && t.est ? '<div class="warnbox">Google 地圖這次沒回應，公里數和時間是大概算的（順序還是可以照著送）。等一下按「路徑規劃選項」再排一次就會準。</div>' : '');
   // 篩選：全部／待送／已送達／沒送成
@@ -1059,6 +1128,8 @@ function stopRow(s, route) {
   const warn = s.lat === '' ? '<button class="badge fail fixpin" onclick="editPin(\'' + s.id + '\')">📍 放位置</button>' :
     s.geo === '約略' ? '<button class="badge warn fixpin" onclick="editPin(\'' + s.id + '\')">📍 修正</button>' : '';
   if (warn) sub.push(warn);
+  const fl = FLAGMAP[s.id];
+  if (fl) sub.push('<button class="badge warn fixpin" onclick="flagList(\'' + s.id + '\')">⚠ ' + fl.map(x => x.short).join('・') + '</button>');
   return '<div class="stop">' + (route ? '<span class="num ' + cls + '">' + s.seq + '</span>' : '') +
     '<div class="grow">' + (s.client ? '<div class="client">' + esc(s.client) + '</div>' : '') + '<div class="addr">' + esc(s.addr) + '</div>' +
     (sub.length ? '<div class="sub">' + sub.join('　') + '</div>' : '') + leg +
