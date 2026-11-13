@@ -180,6 +180,7 @@
   .stp.now{color:#fff;background:var(--g);border-radius:14px;padding:3px 11px}
   .stp.ok{color:var(--g)}
   .stpl{flex:1;height:2px;background:#d5dce0;min-width:8px}
+  .cardmore{display:inline-block;margin:-6px -6px -6px 4px;padding:4px 12px;border-radius:14px;font-size:22px;line-height:1;color:var(--mut);font-weight:900}
   .steppill{display:inline-block;background:var(--g);color:#fff;border-radius:16px;padding:7px 14px;font-weight:800;font-size:16px}
   #nextBar .btn,#homeBar .btn{width:100%;padding:15px 14px;font-size:20px}
   #stFilter .chip{padding:6px 10px;font-size:15px;white-space:nowrap}
@@ -572,7 +573,7 @@ function goBack() { closeSheets(); try { history.back(); } catch (e) { route({ v
 /** 需要行程資料的頁面：沒載入就先讀 */
 function withTrip(id, fn) {
   if (useCached(id)) { fn(); call('getTrip', { id }, false).then(r => { if (ST.trip && ST.trip.id === id && !ST.reorder) refresh(r); }, e => tripGone(e, id)); return; }   // 先用手上的，背景再拿最新的
-  call('getTrip', { id }, '讀取行程…').then(r => { if (CUR.id !== id) return; setTrip(r); fn(); }, () => { if (CUR.id === id) backHome(); });
+  call('getTrip', { id }, '讀取行程…').then(r => { if (CUR.id !== id) return; setTrip(r); fn(); }, e => { tripGone(e, id); if (CUR.id === id) backHome(); });
 }
 /** 行程不見了（被刪掉）：回首頁，返回鍵也不會再回到那一趟 */
 function backHome() { navReplace({ v: 'home' }); CUR = { v: 'home' }; loadHome(); }
@@ -606,7 +607,7 @@ function tabGo(t) {
     call('getTrip', { id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); });
   };
   // 手上這趟：不是待分配（辦公室的）；按「導航」時還要有沒送的
-  const cur = ST.trip && ST.trip.name !== '待分配' ? ST.trip : null;
+  const cur = ST.trip && ST.trip.name !== '待分配' && (!ST.trips || ST.trips.some(x => x.id === ST.trip.id)) ? ST.trip : null;
   if (cur && (!drive || ST.stops.some(s => s.status === '待送'))) {
     // 還沒排路線：先拿最新的再決定（可能辦公室剛幫他排好）
     if (drive && !cur.planned) { call('getTrip', { id: cur.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
@@ -738,7 +739,8 @@ function prefetchTrips() {
 function boot() {
   const snap = loadSnap();
   // 剛才按了「導航」跑去地圖，手機把 App 收掉了：打開就直接回到送貨畫面（3 小時內）
-  const rs0 = lsGet('dh_resume', null), resume = rs0 && Date.now() - rs0.at < 3 * 3600 * 1000 ? rs0 : null;
+  const rs0 = lsGet('dh_resume', null);
+  let resume = rs0 && Date.now() - rs0.at < 3 * 3600 * 1000 ? rs0 : null;
   if (rs0 && !resume) lsSet('dh_resume', null);
   let resumed = false;
   const tryResume = () => { if (resumed || !resume || ST.view !== 'home') return; resumed = true; go({ v: 'drive', id: resume.trip }); };
@@ -749,6 +751,7 @@ function boot() {
     ST.home = r.home; ST.today = r.today;
     ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
     if (r.trips) ST.trips = r.trips;
+    if (resume && r.trips && !r.trips.some(t => t.id === resume.trip)) { forgetTrip(resume.trip); resume = null; }   // 那一趟已經被刪了
     if (!snap) navReplace({ v: 'home' });
     if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); tryResume(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
     if (!snap || ST.view === 'home') loadHome(true);
@@ -807,7 +810,7 @@ function renderTrips() {
   {
     $('tripList').innerHTML = list.length ? list.map(t => {
       const pct = t.total ? Math.round((t.done + t.fail) / t.total * 100) : 0, stp = homeStep(t);
-      return '<button class="trip" style="border-left:14px solid ' + tcOf(t) + '" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + tcDot(t) + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span></div>' +
+      return '<button class="trip" style="border-left:14px solid ' + tcOf(t) + '" onclick="openT(\'' + t.id + '\')"><div class="row"><b class="grow">' + tcDot(t) + esc(t.name) + ' <span class="badge ' + (t.shift === '下午' ? 'warn' : 'done') + '">' + esc(t.shift) + '</span></b><span class="mut">' + esc(t.date) + '</span><span class="cardmore" role="button" aria-label="更多" onclick="cardMenu(event,\'' + t.id + '\')">⋯</span></div>' +
         '<div class="mut" style="margin-top:4px">' + t.total + ' 家　已送達 ' + t.done + (t.fail ? '　<span style="color:var(--red)">沒送成 ' + t.fail + '</span>' : '') +
         (t.km !== '' ? '　' + t.km + ' km' : '') + (t.driver ? '　司機 ' + esc(t.driver) : '') + (t.plate ? '　' + plateTag(t.plate) : '') + '</div>' +
         (stp ? '<div style="margin-top:8px"><span class="steppill" role="button" onclick="stepGo(event,\'' + t.id + '\',\'' + stp.act + '\')">' + stp.label + ' ›</span></div>' : '<div class="mut" style="margin-top:6px;color:var(--g);font-weight:700">✓ 都處理完了</div>') +
@@ -1007,7 +1010,7 @@ function setTrip(r) {
 /** 手上有這一趟（剛看過）：先換過去 */
 function useCached(id) { if (ST.trip && ST.trip.id === id) return true; const r = TRIPS[id]; if (!r) return false; setTrip(r); return true; }
 /** 行程被刪掉了：回首頁 */
-function tripGone(e, id) { if (/找不到這個行程/.test((e && e.message) || String(e))) { delete TRIPS[id]; if (CUR.id === id) { toast('這趟已經被刪掉了'); backHome(); } } }
+function tripGone(e, id) { if (/找不到這個行程/.test((e && e.message) || String(e))) { forgetTrip(id); if (CUR.id === id) { toast('這趟已經被刪掉了'); backHome(); } } }
 function openTrip(id, fresh) {
   const done = () => {
     $('hTitle').textContent = tripTitle(ST.trip); show('trip'); render();
@@ -1018,7 +1021,7 @@ function openTrip(id, fresh) {
   call('getTrip', { id }, '讀取行程…').then(r => {
     if (CUR.v !== 'trip' || CUR.id !== id) return;   // 等的時候已經換到別頁了
     setTrip(r); done();
-  }, () => { if (CUR.id === id) backHome(); });
+  }, e => { tripGone(e, id); if (CUR.id === id) backHome(); });
 }
 const TIPS = {
   pool: ['待分配', '辦公室在「後台」匯入今天的訂單，先放在這裡。<br><br>司機到<b>自己的行程</b>按「＋ 加客戶」→「辦公室匯入的訂單」，勾要送的。挑走的會搬到他的行程，別人就看不到了。'],
@@ -1484,7 +1487,7 @@ function tripMenu() {
       else if (a === 'rename') renameTrip();
       else if (a === 'color') pickColor();
       else if (a === 'carry') carryOver();
-      else if (a === 'del' && confirm('確定刪除「' + t.name + '」和裡面 ' + ST.stops.length + ' 家？刪了救不回來。')) call('deleteTrip', { id: t.id }, '刪除中…').then(() => { delete TRIPS[t.id]; ST.trip = null; ST.trips = null; backHome(); });
+      else if (a === 'del') delTrip({ id: t.id, name: t.name, total: ST.stops.length, done: ST.stops.filter(s => s.status === '已送達').length, pool: t.name === '待分配' });
     });
   });
 }
@@ -1501,6 +1504,47 @@ function pickColor() {
       call('updateTrip', { id: t.id, patch: { color: b.dataset.c } }, '儲存中…').then(r => { refresh(r); toast('已改成' + b.dataset.c + '色'); });
     });
   });
+}
+/** 首頁卡片右上角「⋯」：不用點進去就能刪 */
+function cardMenu(ev, id) {
+  ev.stopPropagation();
+  const t = (ST.trips || []).find(x => x.id === id);
+  if (t) delTrip({ id: t.id, name: t.name, total: t.total, done: t.done, pool: !!t.pool });
+}
+/**
+ * 刪除行程（首頁「⋯」、行程裡「⋯ 更多」都是這一個）：還沒送的可以退回待分配；
+ * 刪完把手機上記著的這一趟（清單、快照、導航到一半、繼續導航提醒）都清掉
+ */
+function delTrip(x) {
+  const left = x.total - x.done, back = left > 0 && !x.pool;
+  sheet('<h2>刪除「' + esc(x.name) + '」</h2>' + (back ? '<div class="mut">裡面還沒送的 ' + left + ' 家要怎麼辦？</div>' : '') +
+    '<div style="display:grid;gap:10px;margin-top:12px">' +
+    (back ? '<button class="btn" data-d="pool">刪除行程，還沒送的 ' + left + ' 家退回待分配</button>' : '') +
+    '<button class="btn sec" data-d="all" style="color:var(--red)">' + (left ? '連同 ' + x.total + ' 家客戶全部刪掉' : '刪除這個行程') + '</button></div>' +
+    (x.done ? '<div class="mut" style="margin-top:10px">已經送達的 ' + x.done + ' 家紀錄會一起刪掉（看板、報表會少這幾家）</div>' : ''), (el, close) => {
+    el.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
+      const toPool = b.dataset.d === 'pool';
+      if (!toPool && left && !confirm('裡面 ' + left + ' 家還沒送的客戶也一起刪掉？刪了救不回來。')) return;
+      close();
+      call('deleteTrip', { id: x.id, toPool }, '刪除中…').then(r => {
+        forgetTrip(x.id);
+        toast('已刪除「' + x.name + '」' + (r && r.back ? '，' + r.back + ' 家退回待分配' : ''), 3500);
+        backHome();
+      });
+    });
+  });
+}
+/** 這一趟不在了（自己刪的、別支手機刪的）：手上記著的都清掉，首頁、導航、重開 App 都不會再出現 */
+function forgetTrip(id) {
+  delete TRIPS[id];
+  if (ST.trips) ST.trips = ST.trips.filter(t => t.id !== id);
+  if (ST.trip && ST.trip.id === id) { ST.trip = null; ST.stops = []; }
+  if (ST.drive && ST.drive.trip === id) ST.drive = null;
+  if (ST.clash && ST.clash.trip === id) ST.clash = null;
+  ['nav', 'skip', 'go'].forEach(k => lsSet('dh_' + k + '_' + id, null));
+  const rs = lsGet('dh_resume', null);
+  if (rs && rs.trip === id) lsSet('dh_resume', null);
+  saveSnap();
 }
 function renameTrip() {
   const t = ST.trip;
