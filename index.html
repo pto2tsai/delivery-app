@@ -255,6 +255,7 @@
   <button class="adm" onclick="go({ v: 'board' })"><span class="ico">📊</span><span class="grow"><b>今日看板</b><span class="mut">每一趟送到哪裡、下一站、會晚到的、沒送成的</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="go({ v: 'report' })"><span class="ico">📈</span><span class="grow"><b>報表</b><span class="mut">每個司機、每台車、每一天；可以下載成 Excel</span></span><span class="mut">›</span></button>
   <button class="adm" onclick="openPoolImport()"><span class="ico">📥</span><span class="grow"><b>匯入今天的訂單</b><span class="mut">一次匯入全部，司機自己挑（待分配）</span></span><span class="mut">›</span></button>
+  <button class="adm" onclick="wmsSync()"><span class="ico">🔄</span><span class="grow"><b>從 WMS 匯入崇文自送訂單</b><span class="mut">每天 7:00～13:00 每 30 分鐘自動讀，現在也可以按</span><span class="mut" id="wmsInfo" style="display:block"></span></span><span class="mut">›</span></button>
 </main>
 
 <!-- 看板（辦公室看每一趟的進度） -->
@@ -405,9 +406,9 @@ try { ST.pin = localStorage.getItem('dh_pin') || ''; } catch (e) {}
  */
 const API_URL = 'https://script.google.com/macros/s/AKfycbwVuEXAz0r6B-GbexBxwmwoit50TFHlb8wFUd_i-b1Vl1NfZJytL2ajU5-ydryV2bsHzg/exec';
 /** 會改資料的動作：帶一個 rid（網路斷掉自動重送時，後端認得是同一次，不會做兩次） */
-const WRITES = { createTrip: 1, updateTrip: 1, deleteTrip: 1, addStops: 1, updateStop: 1, deleteStop: 1, setPin: 1, setPinAddr: 1, setOrder: 1,
+const WRITES = { wmsSync: 1, createTrip: 1, updateTrip: 1, deleteTrip: 1, addStops: 1, updateStop: 1, deleteStop: 1, setPin: 1, setPinAddr: 1, setOrder: 1,
   planRoute: 1, carryOver: 1, moveStops: 1, openPool: 1, saveHome: 1, saveFleet: 1, saveWeekly: 1, importHistory: 1 };
-const SLOW = { planRoute: 1, importHistory: 1, geocode: 1, carryOver: 1, moveStops: 1, addStops: 1 };   // 這些比較久，多等一下
+const SLOW = { wmsSync: 1, planRoute: 1, importHistory: 1, geocode: 1, carryOver: 1, moveStops: 1, addStops: 1 };   // 這些比較久，多等一下
 function rpc(fn, args, pin, rid) {
   const req = { fn, args, pin, rid }, ms = SLOW[fn] ? 120000 : 40000;
   const once = () => new Promise((ok, fail) => {
@@ -1886,6 +1887,27 @@ const plateTag = p => '<span class="plate">' + esc(p) + '</span>';
 function showAdmin() {
   $('hTitle').textContent = '後台';
   show('admin');
+  call('wmsStatus', {}, false).then(wmsInfo, () => {});   // 上次從 WMS 讀的結果（背景拿）
+}
+/** 後台「從 WMS 匯入」下面那行：帳號沒設、上次讀了幾張、上次失敗的原因 */
+function wmsInfo(st) {
+  const el = $('wmsInfo');
+  if (!el) return;
+  const l = st && st.last, at = l && l.at ? l.at.slice(5, 16).replace('-', '/') : '';
+  el.style.color = l && l.ok === false ? 'var(--red)' : '';
+  el.textContent = !st || !st.configured ? '還沒設定 WMS 帳號（管理的人到指令碼屬性填 WMS_EMAIL、WMS_PASSWORD）'
+    : !l ? '還沒讀過' : l.ok === false ? '上次失敗（' + at + '）：' + l.msg
+    : '上次 ' + at + ' 讀了 ' + l.seen + ' 張：新增 ' + l.added + '、更新 ' + l.updated + '、取消 ' + (l.removed + l.cancelled);
+}
+/** 馬上從 WMS 讀一次（新的進待分配；改了件數、地址的更新；取消的拿掉或標起來） */
+function wmsSync() {
+  call('wmsSync', {}, '讀取 WMS 訂單…').then(r => {
+    const n = r.added + r.updated + r.removed + r.cancelled;
+    toast(n ? 'WMS：新增 ' + r.added + ' 家、更新 ' + r.updated + ' 家、取消 ' + (r.removed + r.cancelled) + ' 家（新的在「待分配」，司機自己挑）' : 'WMS 沒有新的變動（共讀到 ' + r.seen + ' 張）', 5000);
+    ST.trips = null;
+    call('listTrips', {}, false).then(l => { ST.trips = l; saveSnap(); }, () => {});
+    call('wmsStatus', {}, false).then(wmsInfo, () => {});
+  }, () => call('wmsStatus', {}, false).then(wmsInfo, () => {}));   // 失敗了：視窗會說原因，後台那行也換成「上次失敗」
 }
 /* ================= 每週路線（設定裡可以改） ================= */
 let WEEKLY = null;
