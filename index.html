@@ -439,17 +439,21 @@ function rpc(fn, args, pin, rid) {
  * 轉圈會蓋住整個畫面（不會按兩次）；等超過 10 秒可以按「不等了」
  */
 let CANCEL_GEN = 0;
+const RETRY_RID = {};   // 沒等到回覆的存檔：同樣的內容再按，用同一個 rid
 function call(fn, args, msg) {
   const quiet = msg === false, gen = CANCEL_GEN;
-  const rid = WRITES[fn] ? Date.now().toString(36) + Math.random().toString(36).slice(2, 8) : undefined;
+  const same = WRITES[fn] ? fn + JSON.stringify(args) : '', prev = same && RETRY_RID[same];
+  const rid = WRITES[fn] ? (prev && Date.now() - prev.at < 8 * 60000 ? prev.rid : Date.now().toString(36) + Math.random().toString(36).slice(2, 8)) : undefined;   // 上一次沒等到回覆（可能已經存了）：同樣的內容用同一個 rid
   if (!quiet) busyOn(msg || '處理中…');
   return new Promise((ok, fail) => rpc(fn, args, ST.pin, rid).then(r => {
-    if (!quiet) busyOff();
+    if (!quiet && gen === CANCEL_GEN) busyOff();   // 按過「不等了」的那一次：轉圈已經收了，不要再收掉後來的
+    if (same) delete RETRY_RID[same];
     if (gen !== CANCEL_GEN && !quiet) { quietRefresh(); return; }   // 按了「不等了」：結果不要再跳出來
     ok(r);
   }, e => {
-    if (!quiet) busyOff();
+    if (!quiet && gen === CANCEL_GEN) busyOff();
     const m = ((e && e.message) || String(e)).replace(/^Error:\s*/, '');
+    if (same) { if (/網路太慢|連不上|NET_TIMEOUT|NET_DOWN/.test(m)) RETRY_RID[same] = { rid, at: Date.now() }; else delete RETRY_RID[same]; }
     if (/PIN_WRONG/.test(m)) showPin('密碼不對或已經換了，請重新輸入');
     else if (!quiet && gen === CANCEL_GEN) alert('出了點問題：' + m);
     if (WRITES[fn] && fn !== 'deleteTrip') quietRefresh();   // 沒存成功：畫面換成最新的，不會停在錯的狀態
@@ -558,6 +562,10 @@ document.addEventListener('visibilitychange', () => {
   if (ST.view === 'drive' && D && D.nav && Date.now() - D.nav.at > 4000) { D.back = true; renderDrive(); drScroll(); }   // 從地圖回來：告訴他下一步
   if (ST.view === 'trip' || ST.view === 'drive') quietRefresh();
   else if (ST.view === 'home') loadHome();
+  if (Date.now() - (ST.helloAt || 0) > 30 * 60000) {   // 放了很久（例如鎖著過夜）：跟系統再確認一次今天幾號、現在幾點
+    ST.helloAt = Date.now();
+    rpc('hello', { pin: ST.pin }, ST.pin).then(r => { if (r && r.today) { ST.today = r.today; ST.todayLocal = localDay(); if (r.hour != null) ST.hourOff = r.hour - new Date().getHours(); } }, () => {});
+  }
 });
 /** 換到某一頁（記下上一頁） */
 let PREV = null;   // 上一頁（結束送貨時回去用）
@@ -693,7 +701,8 @@ function batchUrl(list) {
 }
 /** 接下來要送的（照順序、有位置的）；first 排第一個 */
 function nextBatch(first) {
-  const todo = ST.stops.filter(s => s.status === '待送' && s.lat !== '');
+  const skip = (ST.drive && ST.drive.skip) || [];
+  const todo = ST.stops.filter(s => s.status === '待送' && s.lat !== '' && (s === first || skip.indexOf(s.id) < 0));   // 按了「晚點送」的不排進一起導航
   const i = first ? todo.indexOf(first) : 0;
   return i > 0 ? todo.slice(i).concat(todo.slice(0, i)) : todo;
 }
@@ -708,7 +717,17 @@ function batchBtn(first) {
 /* ================= 上次的資料（打開 App 馬上有畫面） =================
  * 存在這支手機：首頁行程、今天幾趟的內容、司機車牌、每週路線。打開時先顯示，同時跟系統拿最新的
  */
-const localDay = () => { const x = new Date(); return x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2); };
+const ymdOf = x => x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+const localDay = () => ymdOf(new Date());
+const addDay = (d, n) => { const x = new Date(d + 'T00:00:00'); x.setDate(x.getDate() + n); return ymdOf(x); };
+/** 今天（系統的日期）。App 開著過夜（手機鎖著放一晚）也會自己換日：照手機過了幾天往後推 */
+function todayStr() {
+  const l = localDay();
+  if (!ST.today) return l;
+  if (ST.todayLocal && ST.todayLocal !== l) ST.today = addDay(ST.today, Math.round((new Date(l + 'T00:00:00') - new Date(ST.todayLocal + 'T00:00:00')) / 864e5));
+  ST.todayLocal = l;
+  return ST.today;
+}
 let snapT;
 function saveSnap() {
   clearTimeout(snapT);
@@ -723,7 +742,7 @@ function loadSnap() {
   const s = lsGet('dh_snap', null);
   if (!s || !s.trips) return false;
   ST.home = s.home; ST.hourOff = s.hourOff || 0;
-  ST.today = s.today === localDay() ? s.today : localDay();   // 隔天打開：先用手機的日期
+  ST.today = s.today === localDay() ? s.today : localDay(); ST.todayLocal = localDay();   // 隔天打開：先用手機的日期
   ST.trips = s.trips; Object.assign(TRIPS, s.TRIPS || {});
   if (s.fleet) FLEET = s.fleet;
   if (s.weekly) WEEKLY = s.weekly;
@@ -748,10 +767,14 @@ function boot() {
   rpc('hello', { pin: ST.pin, trips: true }, ST.pin).then(r => {
     busy(false);
     if (!r.pinOk) { lsSet('dh_snap', null); ST.trips = null; showPin(ST.pin ? '密碼不對，請重新輸入' : ''); return; }
-    ST.home = r.home; ST.today = r.today;
+    ST.home = r.home; ST.today = r.today; ST.todayLocal = localDay(); ST.helloAt = Date.now();
     ST.hourOff = r.hour == null ? 0 : r.hour - new Date().getHours();   // 用系統的時間判斷上午／下午（手機時鐘不準也沒關係）
     if (r.trips) ST.trips = r.trips;
-    if (resume && r.trips && !r.trips.some(t => t.id === resume.trip)) { forgetTrip(resume.trip); resume = null; }   // 那一趟已經被刪了
+    if (resume && r.trips) {
+      const rt = r.trips.find(t => t.id === resume.trip);
+      if (!rt) { forgetTrip(resume.trip); resume = null; }   // 那一趟已經被刪了
+      else if (rt.total <= rt.done + rt.fail) { lsSet('dh_resume', null); resume = null; }   // 都送完了
+    }
     if (!snap) navReplace({ v: 'home' });
     if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); tryResume(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
     if (!snap || ST.view === 'home') loadHome(true);
@@ -827,7 +850,7 @@ const WD = ['日', '一', '二', '三', '四', '五', '六'];
  * 打開直接按「建立」就好；要改才按「改」
  */
 function newTrip() {
-  const d = ST.today || new Date().toISOString().slice(0, 10);
+  const d = todayStr();
   sheet('<h2>新增行程</h2>' +
     '<div class="nt-sum"><div class="grow" id="ntSum"></div><button type="button" id="ntMoreBtn">改</button></div>' +
     '<div id="ntMore" class="hide">' +
@@ -844,7 +867,7 @@ function newTrip() {
     const sum = () => {
       if (!$('ntDate')) return;   // 視窗已經關了（背景讀的東西晚到）
       const dv = $('ntDate').value, dt = new Date(dv + 'T00:00:00'), drv = $('ntDriver').value.trim(), pl = $('ntPlate').value.trim();
-      $('ntSum').innerHTML = '📅 ' + (dv === ST.today ? '今天 ' : '') + esc(dv.slice(5).replace('-', '/')) + '（' + WD[dt.getDay()] + '）・<b>' + shift + '</b> ' + esc($('ntDepart').value) + ' 出發<br>' +
+      $('ntSum').innerHTML = '📅 ' + (dv === todayStr() ? '今天 ' : '') + esc(dv.slice(5).replace('-', '/')) + '（' + WD[dt.getDay()] + '）・<b>' + shift + '</b> ' + esc($('ntDepart').value) + ' 出發<br>' +
         (drv ? '🚚 ' + esc(drv) + (pl ? ' ' + plateTag(pl) : '') : '<span class="mut">🚚 沒指定司機（可以到「設定」選這支手機是誰開的）</span>');
       $('ntGo').textContent = '建立' + ($('ntName').value.trim() ? '「' + $('ntName').value.trim() + '」' : '');
     };
@@ -992,9 +1015,12 @@ function paintTrip(view) {
 }
 const tripTitle = t => t.name === '待分配' ? '📥 待分配 ' + t.date.slice(5).replace('-', '/') : t.name + (t.shift && t.name.indexOf(t.shift) < 0 ? '・' + t.shift : '');   // 「星期一下午」不用再加・下午
 /** 沒送完的移到哪一趟：今天（或以後）上午 → 同一天下午；其他 → 明天上午（跟後端一樣） */
+/** 沒送完的移到哪一趟（跟後端 nextShift_ 一樣）：上午 → 同一天下午；下午 → 隔天上午；已經過去的 → 今天（中午以前上午、以後下午）；碰到星期日往後到星期一上午 */
 function nextShiftLabel(t) {
-  const today = ST.today || new Date().toISOString().slice(0, 10);
-  return t.shift === '上午' && t.date >= today ? (t.date === today ? '今天' : t.date.slice(5).replace('-', '/')) + '下午' : '明天上午';
+  const today = todayStr();
+  let r = t.date < today ? { date: today, shift: nowHour() < 12 ? '上午' : '下午' } : t.shift === '上午' ? { date: t.date, shift: '下午' } : { date: addDay(t.date, 1), shift: '上午' };
+  if (new Date(r.date + 'T00:00:00').getDay() === 0) r = { date: addDay(r.date, 1), shift: '上午' };
+  return (r.date === today ? '今天' : r.date === addDay(today, 1) ? '明天' : r.date.slice(5).replace('-', '/') + '（' + WD[new Date(r.date + 'T00:00:00').getDay()] + '）') + r.shift;
 }
 const TRIPS = {};   // 看過的行程先留著：切換時馬上顯示，背景再拿最新的
 /** 從清單點一趟進去：一律先看「送貨清單」 */
@@ -1030,6 +1056,11 @@ const TIPS = {
   rough: ['位置不準', 'Google 只找到村、路或附近，不知道是哪一棟。<br><br>按那一家黃色的「📍 修正」，在地圖上拖到正確的地方；或到了以後按「📍 位置不準」→「我到了，用我現在的位置」。<b>下次就會記住</b>。']
 };
 function tipHelp(k) { const t = TIPS[k]; sheet('<h2>' + t[0] + '</h2><div style="font-size:17px;line-height:1.7">' + t[1] + '</div><p><button class="btn" id="tipOk">知道了</button></p>', (el, close) => { el.querySelector('#tipOk').onclick = close; }); }
+/** 排過路線的行程少了一家、改了地址：背景照原本的順序重算距離和預計到達 */
+function replanBg(r) {
+  if (!r || !r.trip || !r.trip.planned) return;
+  call('planRoute', { trip: r.trip.id, mode: 'manual' }, false).then(x => { if (ST.trip && ST.trip.id === x.trip.id && !ST.reorder) refresh(x); }, () => {});
+}
 function refresh(r) {
   if (ST.trip && r && r.trip && r.trip.id !== ST.trip.id) { quietRefresh(); return; }   // 回來的是別趟（這一家剛被退回、搬走）：不要換過去，畫面上這趟換成最新的
   setTrip(r); render(); if (ST.view === 'drive') renderDrive();
@@ -1103,7 +1134,7 @@ function flagList(onlyId) {
       const ids = Object.keys(pick).map(i => rows[+i].id);
       if (!ids.length || !confirm('確定移除這 ' + ids.length + ' 家？')) return;
       close();
-      call('deleteStop', { ids, trip: ST.trip.id }, '移除中…').then(r => { refresh(r); toast('已移除 ' + ids.length + ' 家'); });
+      call('deleteStop', { ids, trip: ST.trip.id }, '移除中…').then(r => { refresh(r); replanBg(r); toast('已移除 ' + ids.length + ' 家'); });
     };
     el.querySelector('#fgKeep').onclick = () => { const ok = lsGet('dh_ok', {}); rows.forEach(s => { ok[s.id] = 1; }); lsSet('dh_ok', ok); close(); render(); toast('好，這' + (rows.length > 1 ? ' ' + rows.length + ' 家' : '一家') + '不再提醒'); };
   });
@@ -1208,11 +1239,11 @@ function renderSel(shown) {
   $('selBar').classList.remove('hide');
   $('selDel').onclick = () => {
     if (!ids.length || !confirm('確定刪除這 ' + ids.length + ' 家？刪了救不回來。')) return;
-    call('deleteStop', { ids, trip: ST.trip.id }, '刪除中…').then(r => { ST.sel = null; refresh(r); toast('已刪除 ' + ids.length + ' 家'); });
+    call('deleteStop', { ids, trip: ST.trip.id }, '刪除中…').then(r => { ST.sel = null; refresh(r); replanBg(r); toast('已刪除 ' + ids.length + ' 家'); });
   };
   if (canPool) $('selPool').onclick = () => {
     if (!confirm('把這 ' + ids.length + ' 家退回待分配？（會從你的行程拿掉，讓別的司機挑）')) return;
-    call('moveStops', { ids, toPool: true, from: ST.trip.id }, '退回中…').then(() => call('getTrip', { id: ST.trip.id }, false)).then(r => { ST.sel = null; refresh(r); toast('已退回 ' + ids.length + ' 家到待分配'); });
+    call('moveStops', { ids, toPool: true, from: ST.trip.id }, '退回中…').then(() => call('getTrip', { id: ST.trip.id }, false)).then(r => { ST.sel = null; refresh(r); replanBg(r); toast('已退回 ' + ids.length + ' 家到待分配'); });
   };
 }
 function stopRow(s, route) {
@@ -1427,8 +1458,8 @@ function stopMenu(id) {
       else if (a === 'todo') setStatus(s, '待送');
       else if (a === 'edit') editStop(s);
       else if (a === 'pin') editPin(s.id);
-      else if (a === 'pool' && confirm('把「' + (s.client || s.addr) + '」退回待分配？（會從你的行程拿掉，讓別的司機挑）')) call('moveStops', { ids: [s.id], toPool: true, from: ST.trip.id }, '退回中…').then(() => call('getTrip', { id: ST.trip.id }, false)).then(r => { refresh(r); toast('已退回待分配'); });
-      else if (a === 'del' && confirm('確定刪除「' + (s.client || s.addr) + '」？')) call('deleteStop', { id: s.id }, '刪除中…').then(refresh);
+      else if (a === 'pool' && confirm('把「' + (s.client || s.addr) + '」退回待分配？（會從你的行程拿掉，讓別的司機挑）')) call('moveStops', { ids: [s.id], toPool: true, from: ST.trip.id }, '退回中…').then(() => call('getTrip', { id: ST.trip.id }, false)).then(r => { refresh(r); replanBg(r); toast('已退回待分配'); });
+      else if (a === 'del' && confirm('確定刪除「' + (s.client || s.addr) + '」？')) call('deleteStop', { id: s.id, trip: ST.trip.id }, '刪除中…').then(r => { refresh(r); replanBg(r); });
     });
   });
 }
@@ -1469,6 +1500,7 @@ function editStop(s) {
       if (!Object.keys(patch).length) { close(); return; }   // 沒改什麼
       call('updateStop', { id: s.id, trip: ST.trip.id, patch }, '儲存中…').then(r => {
         close(); refresh(r);
+        if ('addr' in patch) replanBg(r);   // 地址改了：距離、預計到達重算
         if (twChanged && r.trip.planned) toast('時段改了，按清單上面的「路徑規劃選項」重排，會照新的時段', 4000);
       });
     };
@@ -1728,6 +1760,8 @@ function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null
 function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 let drTimer;
 function showDrive() {
+  const rs = lsGet('dh_resume', null);
+  if (rs && rs.trip !== ST.trip.id) lsSet('dh_resume', null);   // 換送別趟了：之前那一趟的「繼續導航」不要了
   if (!ST.drive || ST.drive.trip !== ST.trip.id) {
     const nv = lsGet(drKey('nav'), null), fresh = nv && Date.now() - nv.at < 3 * 3600 * 1000;   // 導航出去後 3 小時內回來
     ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null, nav: fresh ? nv : null, back: !!fresh };
@@ -1767,7 +1801,8 @@ const m2hm = m => ('0' + Math.floor(((m % 1440) + 1440) % 1440 / 60)).slice(-2) 
 function drDelay() {
   const fin = ST.stops.filter(s => s.status !== '待送' && doneHm(s) && s.eta).sort((a, b) => (a.doneAt < b.doneAt ? -1 : 1));
   const last = fin[fin.length - 1];
-  return last ? hm2m(doneHm(last)) - hm2m(last.eta) : 0;
+  if (!last || (ST.trip.planned && ST.trip.planned >= last.doneAt)) return 0;   // 最後一家送完之後又重排過：預計到達已經是新的，不用再加
+  return hm2m(doneHm(last)) - hm2m(last.eta);
 }
 function drEta(s, delay) { return s.eta ? m2hm(hm2m(s.eta) + delay) : ''; }
 function renderDrive() {
@@ -2151,7 +2186,7 @@ let boardTimer, BD_OPEN = {};
 function showBoard() {
   $('hTitle').textContent = '📊 今日看板';
   show('board');
-  if (!$('bdDate').value) $('bdDate').value = ST.today;
+  if (!$('bdDate').value || $('bdDate').value === $('bdDate').dataset.auto) $('bdDate').value = $('bdDate').dataset.auto = todayStr();   // 自己選過別天的不動；沒選過的跟著換日
   $('bdDate').onchange = loadBoard;
   loadBoard();
   clearInterval(boardTimer);
@@ -2198,7 +2233,7 @@ function showReport() {
   loadReport();
 }
 function rpRange(k, noLoad) {
-  const d = new Date(ST.today + 'T00:00:00'), f = x => x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
+  const d = new Date(todayStr() + 'T00:00:00'), f = x => x.getFullYear() + '-' + ('0' + (x.getMonth() + 1)).slice(-2) + '-' + ('0' + x.getDate()).slice(-2);
   let a, b = new Date(d);
   if (k === 'week') { a = new Date(d); a.setDate(d.getDate() - ((d.getDay() + 6) % 7)); }
   else if (k === 'last') { a = new Date(d.getFullYear(), d.getMonth() - 1, 1); b = new Date(d.getFullYear(), d.getMonth(), 0); }
@@ -2241,13 +2276,13 @@ function downloadReport() {
 
 /* ================= 待分配（辦公室一次匯入，司機自己挑） ================= */
 function openPoolImport() {
-  call('openPool', { date: ST.today }, '準備中…').then(r => { setTrip(r); go({ v: 'import', id: r.trip.id }); });   // 返回鍵回到後台
+  call('openPool', { date: todayStr() }, '準備中…').then(r => { setTrip(r); go({ v: 'import', id: r.trip.id }); });   // 返回鍵回到後台
 }
 /** 從待分配挑：勾要送的 → 搬到我的行程（別人就看不到了） */
 function pickFromPool() {
   call('poolStops', { trip: ST.trip.id }, '讀取待分配…').then(list => {
     if (!list.length) { toast('辦公室還沒匯入訂單（辦公室在「後台」按「📥 匯入今天的訂單」）', 4500); return; }
-    const pick = {}, today = ST.today;
+    const pick = {}, today = todayStr();
     list.forEach((c, i) => { if (c.mine && !c.dup) pick[i] = 1; });   // 我這條路線的先勾好（今天已經在別趟的不勾）
     const nMine = Object.keys(pick).length;
     sheet('<h2>📥 辦公室匯入的訂單</h2><div class="mut">勾你要送的，會搬到「' + esc(tripTitle(ST.trip)) + '」，別的司機就看不到了。' +
