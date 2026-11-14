@@ -512,7 +512,7 @@ function goUp() {
   if (!up || (up === 'trip' && !id)) { goBack(); return; }
   const st = up === 'trip' ? { v: 'trip', id } : { v: up };
   if (PREV && PREV.v === up && PREV.id === st.id && CUR.v === v) goBack();   // 剛好是從那一頁來的：用返回，歷史不會越疊越多
-  else { navReplace(st); route(st); }
+  else { navReplace(st); route(st); FLOOR = ROOTS.indexOf(st.v) >= 0; }   // 回到首頁這類頁面：後面留著的舊歷史不要再回去
 }
 function show(view) {
   if (view !== 'drive') $('hRight').innerHTML = '';
@@ -552,6 +552,7 @@ function onNav(state) {
   state = state && state.v ? state : { v: 'home' };
   if (state.sheet) state = Object.assign({}, state, { sheet: undefined });
   if (hadSheet && state.v === CUR.v && state.id === CUR.id) return;   // 返回鍵只是關掉小視窗
+  if (FLOOR && ROOTS.indexOf(CUR.v) >= 0 && ROOTS.indexOf(state.v) < 0) { navPush(CUR); return; }   // 已經用左上角回到首頁了：返回鍵不要又跑進剛剛的送貨畫面
   route(state);
 }
 if (HIST) HIST.setChangeHandler(e => onNav(e.state)); else window.addEventListener('popstate', e => onNav(e.state));
@@ -569,8 +570,10 @@ document.addEventListener('visibilitychange', () => {
 });
 /** 換到某一頁（記下上一頁） */
 let PREV = null;   // 上一頁（結束送貨時回去用）
+let FLOOR = false;   // 用左上角回到首頁等頁面後，手機返回鍵不要再跑回更早留著的頁面
 function go(state) {
   if (NAV_IGNORE > 0) { setTimeout(() => go(state), 30); return; }   // 小視窗剛關、那一筆「上一頁」還沒收完：等一下再換頁（返回鍵才會回到對的地方）
+  FLOOR = false;
   PREV = CUR;
   closeSheets();
   if (sheetCloseT) { clearTimeout(sheetCloseT); sheetCloseT = null; }
@@ -612,13 +615,13 @@ function tabGo(t) {
   // 手上有的先用（不用問系統）；沒有才去拿
   const openId = id => {
     if (useCached(id) && !(drive && !ST.trip.planned)) { open(ST.trip); return; }   // 手上的還沒排路線：先拿最新的（可能辦公室剛排好）
-    call('getTrip', { id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); });
+    call('getTrip', { id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }, e => tripGone(e, id));
   };
   // 手上這趟：不是待分配（辦公室的）；按「導航」時還要有沒送的
   const cur = ST.trip && ST.trip.name !== '待分配' && (!ST.trips || ST.trips.some(x => x.id === ST.trip.id)) ? ST.trip : null;
   if (cur && (!drive || ST.stops.some(s => s.status === '待送'))) {
     // 還沒排路線：先拿最新的再決定（可能辦公室剛幫他排好）
-    if (drive && !cur.planned) { call('getTrip', { id: cur.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }); return; }
+    if (drive && !cur.planned) { call('getTrip', { id: cur.id }, '讀取行程…').then(r => { setTrip(r); open(r.trip); }, e => tripGone(e, cur.id)); return; }
     open(cur); return;
   }
   const pick = (list, fresh) => {
@@ -779,7 +782,7 @@ function boot() {
     if (!r.trips) { if (!snap || ST.view === 'home') loadHome(); tryResume(); return; }   // 系統還是舊版（沒帶清單）：照舊另外拿
     if (!snap || ST.view === 'home') loadHome(true);
     tryResume();
-    prefetchTrips(); saveSnap();
+    prefetchTrips(); saveSnap(); pruneLocal();
   }, e => {
     busy(false);
     if (snap) { toast('連不上系統，先顯示上次的資料', 4000); return; }
@@ -932,8 +935,17 @@ function showSettings() {
 function saveHome() {
   call('saveHome', { addr: $('hmAddr').value }, '查地址…').then(h => { ST.home = h; toast('已儲存：' + h.addr); });
 }
+/** 手機上記著、但已經不在清單上的行程（送完很久、被刪了）的配送記錄清掉；「都要送」的記錄太多就重來 */
+function pruneLocal() {
+  try {
+    const ids = {};
+    (ST.trips || []).forEach(t => { ids[t.id] = 1; });
+    Object.keys(localStorage).forEach(k => { const m = k.match(/^dh_(?:go|skip|nav)_(.+)$/); if (m && !ids[m[1]]) localStorage.removeItem(k); });
+    if (Object.keys(lsGet('dh_ok', {})).length > 500) lsSet('dh_ok', null);
+  } catch (e) {}
+}
 function forgetPin() {
-  try { localStorage.removeItem('dh_pin'); } catch (e) {}
+  try { localStorage.removeItem('dh_pin'); Object.keys(localStorage).filter(k => /^dh_(go|skip|nav)_|^dh_(resume|ok)$/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) {}
   lsSet('dh_snap', null); ST.trips = null;
   ST.pin = '';
   boot();
@@ -1080,10 +1092,10 @@ function dayRule(s, date) {
   const reOff = /(?:週|周|星期|禮拜)([一二三四五六日])\s*(?:全天)?\s*(?:公休|休息|休市|不配送|不送貨|不送|不收貨|不收|休)/g;
   while ((m = reOff.exec(txt))) if (WD.indexOf(m[1]) === wd) return { why: '寫了「' + m[0].replace(/\s+/g, '') + '」，今天是星期' + WD[wd] };
   const days = []; let hit = '';
-  const reD = /(^|[^\d.])([1-6](?:[.．、,，][1-6])+)(?![\d.]|公|斤|噸|吨|件|箱|元|%|kg|KG|度)/g;   // 2.4.6
+  const reD = /(^|[^\d.])([1-6](?:[.．、,，][1-6])+)(?![\d.]|公|斤|台斤|臺斤|噸|吨|件|箱|元|塊|%|％|kg|KG|度|折|成|倍|兩|克|g|包|盒|尾|片|入|cm|CM|吋|寸|米|M|m)/g;   // 2.4.6（1.5台斤、3.5折 這種不算）
   while ((m = reD.exec(txt))) { m[2].split(/[.．、,，]/).forEach(n => days.push(+n)); hit = hit || m[2]; }
   const reC = /(?:週|周|星期)?([一二三四五六日](?:[.．、,，]?[一二三四五六日])+)\s*(?:再)?(?:配送|送貨|送)/g;   // 二.四送
-  while ((m = reC.exec(txt))) { m[1].split('').forEach(c => { if (WD.indexOf(c) >= 0) days.push(WD.indexOf(c)); }); hit = hit || m[0].replace(/\s+/g, ''); }
+  while ((m = reC.exec(txt))) { if (/^[一每]日$/.test(m[1])) continue; m[1].split('').forEach(c => { if (WD.indexOf(c) >= 0) days.push(WD.indexOf(c)); }); hit = hit || m[0].replace(/\s+/g, ''); }   // 「一日送兩次」不是星期一、日
   const reS = /(?:週|周|星期)([一二三四五六日])\s*(?:才|再)?(?:配送|送貨|送)/g;   // 週二送
   while ((m = reS.exec(txt))) { days.push(WD.indexOf(m[1])); hit = hit || m[0].replace(/\s+/g, ''); }
   // 客戶名稱後面的數字也是星期：廖桂榮4、吳雅玲-3、金泉3 -8（-8 不是星期，略過）、翁嘉琪1-3（一和三）
@@ -1756,6 +1768,8 @@ function here() {
  * 暫停＝先跳過，排到最後；計時、暫停記在這支手機
  */
 const drKey = k => 'dh_' + k + '_' + ST.trip.id;
+/** 這趟幾點開始送（配送計時）：超過 16 小時的是以前的，不要接著算 */
+function driveStartAt() { const v = lsGet(drKey('go'), null); if (v && Date.now() - v > 16 * 3600 * 1000) { lsSet(drKey('go'), null); return null; } return v; }
 function lsGet(k, d) { try { const v = localStorage.getItem(k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } }
 function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
 let drTimer;
@@ -1764,7 +1778,7 @@ function showDrive() {
   if (rs && rs.trip !== ST.trip.id) lsSet('dh_resume', null);   // 換送別趟了：之前那一趟的「繼續導航」不要了
   if (!ST.drive || ST.drive.trip !== ST.trip.id) {
     const nv = lsGet(drKey('nav'), null), fresh = nv && Date.now() - nv.at < 3 * 3600 * 1000;   // 導航出去後 3 小時內回來
-    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null, nav: fresh ? nv : null, back: !!fresh };
+    ST.drive = { trip: ST.trip.id, skip: lsGet(drKey('skip'), []), start: driveStartAt(), f: 'all', open: null, nav: fresh ? nv : null, back: !!fresh };
   }
   show('drive');
   renderDrive();
@@ -1776,7 +1790,7 @@ function showDrive() {
 function driveNav(idsStr) {
   const ids = String(idsStr).split(',').filter(Boolean), t = ST.trip;
   if (!t || !ids.length) return;
-  if (!ST.drive || ST.drive.trip !== t.id) ST.drive = { trip: t.id, skip: lsGet(drKey('skip'), []), start: lsGet(drKey('go'), null), f: 'all', open: null };
+  if (!ST.drive || ST.drive.trip !== t.id) ST.drive = { trip: t.id, skip: lsGet(drKey('skip'), []), start: driveStartAt(), f: 'all', open: null };
   driveStart();
   ST.drive.nav = { ids, at: Date.now() }; ST.drive.back = false;
   lsSet(drKey('nav'), ST.drive.nav); lsSet('dh_resume', { trip: t.id, at: Date.now() });
